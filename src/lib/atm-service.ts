@@ -2,26 +2,26 @@ import { createClient } from "@supabase/supabase-js";
 
 // =========================================================================
 // 🏦 ATM SERVICE & DATABASE LAYER - POKÉMON BANK
+// Tablas: cuentas, transacciones, servicios, auditoria_accesos
+// Procedimientos: sp_validarpin, sp_procesartransaccion
 // =========================================================================
 
 export interface CuentaPokemon {
-  id: string;
-  idUsuario?: number | null;
+  numeroCuenta: string;
   nombre: string;
   tipoCuenta: string;
-  numeroCuenta: string;
   saldo: number;
-  pinCajero: string;
-  estado: "ACTIVA" | "BLOQUEADA" | "SUSPENDIDA";
+  estado: string;
   fotoPerfil: string;
   nivelEntrenador: string;
   limiteRetiroDiario: number;
 }
 
+export type TipoTransaccion = "DEPOSITO" | "RETIRO" | "PAGO_SERVICIO";
+
 export interface TransaccionATM {
   id: string;
-  numeroCuenta: string;
-  tipo: "DEPOSITO" | "RETIRO" | "PAGO_SERVICIO" | "CONSULTA";
+  tipo: TipoTransaccion;
   monto: number;
   saldoAnterior: number;
   saldoPosterior: number;
@@ -34,309 +34,275 @@ export interface TransaccionATM {
 export interface ServicioATM {
   id: string;
   nombre: string;
-  categoria: string;
-  tarifaBase: number;
+  institucion: string;
+  npe: string;
   icono: string;
 }
 
-// Cliente opcional de Supabase si existen las credenciales en .env
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://vknqulxhybbjaqhdttie.supabase.co";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-export const supabase = supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
-// =========================================================================
-// 💾 MEMORIA PERSISTENTE DE LA CUENTA Y CAJERO AUTOMÁTICO
-// =========================================================================
-let cuentaEnMemoria: CuentaPokemon = {
-  id: "PKMN-USR-60",
-  idUsuario: 60,
-  nombre: "JONATAN ALEXANDER ORELLANA HERNANDEZ",
-  tipoCuenta: "CUENTA DE AHORRO",
-  numeroCuenta: "34526685463256668",
-  saldo: 1450250.0,
-  pinCajero: "1234",
-  estado: "ACTIVA",
-  fotoPerfil: "/ICONOS%20POKEMON%20BANK/CHARIZARD.png",
-  nivelEntrenador: "Nivel Maestro Pokémon ★★★",
-  limiteRetiroDiario: 25000.0,
+// Cuenta asignada a este cajero
+const ID_CUENTA_ATM = process.env.ATM_ID_CUENTA || "34526685463256668";
+
+// Datos de presentación que no existen en la tabla cuentas
+const FOTO_PERFIL = "/ICONOS%20POKEMON%20BANK/CHARIZARD.png";
+const NIVEL_ENTRENADOR = "Nivel Maestro Pokémon ★★★";
+const LIMITE_RETIRO = 25000;
+
+// Valores de tipo_transaccion guardados en la base de datos
+const TIPO_BD: Record<TipoTransaccion, string> = {
+  DEPOSITO: "Depósito",
+  RETIRO: "Retiro",
+  PAGO_SERVICIO: "Pago de Servicios",
 };
 
-let transaccionesEnMemoria: TransaccionATM[] = [
-  {
-    id: "TX-PKMN-901",
-    numeroCuenta: "34526685463256668",
-    tipo: "DEPOSITO",
-    monto: 50000,
-    saldoAnterior: 1400250,
-    saldoPosterior: 1450250,
-    descripcion: "Recompensa Campeón Liga Pokémon",
-    referencia: "REF-994821",
-    estado: "EXITOSA",
-    fecha: "Hoy, 10:30 AM",
-  },
-  {
-    id: "TX-PKMN-902",
-    numeroCuenta: "34526685463256668",
-    tipo: "RETIRO",
-    monto: 6000,
-    saldoAnterior: 1456250,
-    saldoPosterior: 1450250,
-    descripcion: "Compra Poké Mart (Ultra Balls x50)",
-    referencia: "REF-883719",
-    estado: "EXITOSA",
-    fecha: "Ayer, 04:15 PM",
-  },
-  {
-    id: "TX-PKMN-903",
-    numeroCuenta: "34526685463256668",
-    tipo: "PAGO_SERVICIO",
-    monto: 1500,
-    saldoAnterior: 1451750,
-    saldoPosterior: 1450250,
-    descripcion: "Suscripción Silph Co. Cloud",
-    referencia: "REF-772611",
-    estado: "EXITOSA",
-    fecha: "12 Oct 2026",
-  },
-  {
-    id: "TX-PKMN-904",
-    numeroCuenta: "34526685463256668",
-    tipo: "DEPOSITO",
-    monto: 12000,
-    saldoAnterior: 1438250,
-    saldoPosterior: 1450250,
-    descripcion: "Premio Victoria Gimnasio Celeste",
-    referencia: "REF-661502",
-    estado: "EXITOSA",
-    fecha: "10 Oct 2026",
-  },
-];
+function db() {
+  if (!supabase) {
+    throw new Error("Supabase no está configurado. Revise NEXT_PUBLIC_SUPABASE_URL y la llave en .env.local");
+  }
+  return supabase;
+}
 
-export const serviciosCatalogo: ServicioATM[] = [
-  { id: "silph_co", nombre: "Silph Co. Electricidad", categoria: "Electricidad", tarifaBase: 850, icono: "⚡" },
-  { id: "gym_celeste", nombre: "Gym Celeste (Agua)", categoria: "Agua", tarifaBase: 420, icono: "💧" },
-  { id: "poke_net", nombre: "Poké-Net 5G Banda Ancha", categoria: "Telecomunicaciones", tarifaBase: 650, icono: "📶" },
-  { id: "centro_pokemon", nombre: "Centro Pokémon Cuota Médica", categoria: "Salud", tarifaBase: 1200, icono: "🏥" },
-];
+function tipoDesdeBD(tipo: string): TipoTransaccion {
+  if (tipo === TIPO_BD.DEPOSITO) return "DEPOSITO";
+  if (tipo === TIPO_BD.RETIRO) return "RETIRO";
+  return "PAGO_SERVICIO";
+}
+
+// fecha_hora se guarda en UTC (timestamp sin zona horaria)
+function formatearFecha(fechaHora: string): string {
+  const fecha = new Date(fechaHora.endsWith("Z") ? fechaHora : `${fechaHora}Z`);
+  return fecha.toLocaleString("es-SV", {
+    timeZone: "America/El_Salvador",
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function iconoServicio(nombre: string): string {
+  const n = nombre.toLowerCase();
+  if (n.includes("eléctric") || n.includes("energ") || n.includes("luz")) return "⚡";
+  if (n.includes("agua")) return "💧";
+  if (n.includes("internet")) return "📶";
+  if (n.includes("telef")) return "📞";
+  return "🧾";
+}
 
 // =========================================================================
 // 🚀 OPERACIONES BANCARIAS DEL ATM
 // =========================================================================
 
-export async function getCuentaATM(numeroCuenta?: string): Promise<CuentaPokemon> {
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("pokemon_bank_cuentas")
-        .select("*")
-        .eq("numero_cuenta", numeroCuenta || cuentaEnMemoria.numeroCuenta)
-        .single();
+export async function getCuentaATM(): Promise<CuentaPokemon> {
+  const { data, error } = await db()
+    .from("cuentas")
+    .select("id_cuenta, nombre_titular, tipo_cuenta, saldo_disponible, estado_cuenta")
+    .eq("id_cuenta", ID_CUENTA_ATM)
+    .single();
 
-      if (data && !error) {
-        cuentaEnMemoria = {
-          id: data.id,
-          idUsuario: data.id_usuario,
-          nombre: data.nombre_titular,
-          tipoCuenta: data.tipo_cuenta,
-          numeroCuenta: data.numero_cuenta,
-          saldo: parseFloat(data.saldo),
-          pinCajero: data.pin_cajero,
-          estado: data.estado,
-          fotoPerfil: data.foto_perfil,
-          nivelEntrenador: data.nivel_entrenador,
-          limiteRetiroDiario: parseFloat(data.limite_retiro_diario),
-        };
-      }
-    } catch {
-      // Usar memoria como respaldo
-    }
+  if (error || !data) {
+    throw new Error("No se encontró la cuenta del cajero en la base de datos");
   }
-  return cuentaEnMemoria;
+
+  return {
+    numeroCuenta: data.id_cuenta,
+    nombre: data.nombre_titular,
+    tipoCuenta: data.tipo_cuenta,
+    saldo: Number(data.saldo_disponible),
+    estado: data.estado_cuenta,
+    fotoPerfil: FOTO_PERFIL,
+    nivelEntrenador: NIVEL_ENTRENADOR,
+    limiteRetiroDiario: LIMITE_RETIRO,
+  };
 }
 
-export async function ejecutarDepositoATM(monto: number): Promise<{ success: boolean; cuenta: CuentaPokemon; transaccion: TransaccionATM }> {
+async function getCuentaActiva(): Promise<CuentaPokemon> {
+  const cuenta = await getCuentaATM();
+  if (cuenta.estado.toLowerCase() !== "activa") {
+    throw new Error(`La cuenta no está activa (${cuenta.estado})`);
+  }
+  return cuenta;
+}
+
+export async function getTransaccionesATM(limite = 20): Promise<TransaccionATM[]> {
+  const [cuenta, { data, error }] = await Promise.all([
+    getCuentaATM(),
+    db()
+      .from("transacciones")
+      .select("id_transaccion, tipo_transaccion, descripcion, monto, fecha_hora")
+      .eq("id_cuenta", ID_CUENTA_ATM)
+      .order("fecha_hora", { ascending: false })
+      .order("id_transaccion", { ascending: false })
+      .limit(limite),
+  ]);
+
+  if (error) {
+    throw new Error("No se pudieron cargar las transacciones");
+  }
+
+  // Se reconstruye el saldo de cada movimiento hacia atrás desde el saldo actual
+  let saldo = cuenta.saldo;
+  return (data ?? []).map((tx) => {
+    const monto = Number(tx.monto);
+    const saldoPosterior = saldo;
+    const saldoAnterior = Math.round((saldoPosterior - monto) * 100) / 100;
+    saldo = saldoAnterior;
+
+    return {
+      id: String(tx.id_transaccion),
+      tipo: tipoDesdeBD(tx.tipo_transaccion),
+      monto: Math.abs(monto),
+      saldoAnterior,
+      saldoPosterior,
+      descripcion: tx.descripcion,
+      referencia: `TX-${String(tx.id_transaccion).padStart(6, "0")}`,
+      estado: "EXITOSA",
+      fecha: formatearFecha(tx.fecha_hora),
+    };
+  });
+}
+
+export async function getServiciosATM(): Promise<ServicioATM[]> {
+  const { data, error } = await db()
+    .from("servicios")
+    .select("id_servicio, nombre_servicio, institucion, npe")
+    .order("id_servicio");
+
+  if (error) {
+    throw new Error("No se pudo cargar el catálogo de servicios");
+  }
+
+  return (data ?? []).map((s) => ({
+    id: String(s.id_servicio),
+    nombre: s.nombre_servicio,
+    institucion: s.institucion,
+    npe: s.npe,
+    icono: iconoServicio(s.nombre_servicio),
+  }));
+}
+
+// Registra el movimiento y actualiza el saldo en una sola llamada a la BD
+async function procesarTransaccion(
+  tipo: TipoTransaccion,
+  descripcion: string,
+  montoConSigno: number
+): Promise<{ success: boolean; cuenta: CuentaPokemon; transaccion: TransaccionATM }> {
+  const { error } = await db().rpc("sp_procesartransaccion", {
+    p_id_cuenta: ID_CUENTA_ATM,
+    p_tipo_transaccion: TIPO_BD[tipo],
+    p_descripcion: descripcion,
+    p_monto: montoConSigno,
+  });
+
+  if (error) {
+    throw new Error("La base de datos rechazó la transacción");
+  }
+
+  const [transaccion] = await getTransaccionesATM(1);
+  const cuenta = await getCuentaATM();
+  return { success: true, cuenta, transaccion };
+}
+
+export async function ejecutarDepositoATM(monto: number) {
   if (monto <= 0) {
     throw new Error("El monto a depositar debe ser mayor a 0");
   }
 
-  const saldoAnterior = cuentaEnMemoria.saldo;
-  const saldoPosterior = saldoAnterior + monto;
-  const ref = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
-
-  cuentaEnMemoria.saldo = saldoPosterior;
-
-  const nuevaTx: TransaccionATM = {
-    id: `TX-${Date.now()}`,
-    numeroCuenta: cuentaEnMemoria.numeroCuenta,
-    tipo: "DEPOSITO",
-    monto,
-    saldoAnterior,
-    saldoPosterior,
-    descripcion: `Depósito en efectivo en Cajero ATM`,
-    referencia: ref,
-    estado: "EXITOSA",
-    fecha: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) + ", Hoy",
-  };
-
-  transaccionesEnMemoria = [nuevaTx, ...transaccionesEnMemoria];
-
-  if (supabase) {
-    try {
-      await supabase
-        .from("pokemon_bank_cuentas")
-        .update({ saldo: saldoPosterior, updated_at: new Date().toISOString() })
-        .eq("numero_cuenta", cuentaEnMemoria.numeroCuenta);
-
-      await supabase.from("pokemon_bank_transacciones").insert({
-        numero_cuenta: cuentaEnMemoria.numeroCuenta,
-        tipo_transaccion: "DEPOSITO",
-        monto,
-        saldo_anterior: saldoAnterior,
-        saldo_posterior: saldoPosterior,
-        descripcion: nuevaTx.descripcion,
-        referencia: nuevaTx.referencia,
-      });
-    } catch {
-      // Ignorar si Supabase no tiene la tabla aún
-    }
-  }
-
-  return { success: true, cuenta: cuentaEnMemoria, transaccion: nuevaTx };
+  await getCuentaActiva();
+  return procesarTransaccion("DEPOSITO", "Depósito en efectivo en Cajero ATM", monto);
 }
 
-export async function ejecutarRetiroATM(monto: number, pinIngresado?: string): Promise<{ success: boolean; cuenta: CuentaPokemon; transaccion: TransaccionATM }> {
+export async function ejecutarRetiroATM(monto: number, pinIngresado?: string) {
   if (monto <= 0) {
     throw new Error("El monto a retirar debe ser mayor a 0");
   }
-
-  if (pinIngresado && pinIngresado !== cuentaEnMemoria.pinCajero) {
-    throw new Error("PIN de seguridad incorrecto");
+  if (!pinIngresado || !/^\d{4}$/.test(pinIngresado)) {
+    throw new Error("Ingrese un PIN de 4 dígitos");
   }
 
-  if (monto > cuentaEnMemoria.saldo) {
+  const cuenta = await getCuentaActiva();
+
+  // sp_validarpin también guarda el intento en auditoria_accesos
+  const { data, error } = await db().rpc("sp_validarpin", {
+    p_id_cuenta: ID_CUENTA_ATM,
+    p_pin: pinIngresado,
+  });
+
+  if (error) {
+    throw new Error("No se pudo validar el PIN");
+  }
+
+  const validacion = Array.isArray(data) ? data[0] : data;
+  if (!validacion || validacion.estado !== "Exito") {
+    throw new Error(validacion?.mensaje || "PIN de seguridad incorrecto");
+  }
+
+  if (monto > cuenta.saldo) {
     throw new Error("Fondos insuficientes en la cuenta");
   }
-
-  if (monto > cuentaEnMemoria.limiteRetiroDiario) {
-    throw new Error(`El monto excede el límite de retiro diario ($${cuentaEnMemoria.limiteRetiroDiario.toLocaleString()})`);
+  if (monto > cuenta.limiteRetiroDiario) {
+    throw new Error(`El monto excede el límite de retiro diario ($${cuenta.limiteRetiroDiario.toLocaleString()})`);
   }
 
-  const saldoAnterior = cuentaEnMemoria.saldo;
-  const saldoPosterior = saldoAnterior - monto;
-  const ref = `RET-${Math.floor(100000 + Math.random() * 900000)}`;
-
-  cuentaEnMemoria.saldo = saldoPosterior;
-
-  const nuevaTx: TransaccionATM = {
-    id: `TX-${Date.now()}`,
-    numeroCuenta: cuentaEnMemoria.numeroCuenta,
-    tipo: "RETIRO",
-    monto,
-    saldoAnterior,
-    saldoPosterior,
-    descripcion: `Retiro de efectivo en Cajero ATM`,
-    referencia: ref,
-    estado: "EXITOSA",
-    fecha: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) + ", Hoy",
-  };
-
-  transaccionesEnMemoria = [nuevaTx, ...transaccionesEnMemoria];
-
-  if (supabase) {
-    try {
-      await supabase
-        .from("pokemon_bank_cuentas")
-        .update({ saldo: saldoPosterior, updated_at: new Date().toISOString() })
-        .eq("numero_cuenta", cuentaEnMemoria.numeroCuenta);
-
-      await supabase.from("pokemon_bank_transacciones").insert({
-        numero_cuenta: cuentaEnMemoria.numeroCuenta,
-        tipo_transaccion: "RETIRO",
-        monto,
-        saldo_anterior: saldoAnterior,
-        saldo_posterior: saldoPosterior,
-        descripcion: nuevaTx.descripcion,
-        referencia: nuevaTx.referencia,
-      });
-    } catch {
-      // Ignorar
-    }
-  }
-
-  return { success: true, cuenta: cuentaEnMemoria, transaccion: nuevaTx };
+  return procesarTransaccion("RETIRO", "Retiro de efectivo en Cajero ATM", -monto);
 }
 
-export async function ejecutarPagoServicioATM(servicioId: string, monto?: number): Promise<{ success: boolean; cuenta: CuentaPokemon; transaccion: TransaccionATM; comprobante: string }> {
-  const servicio = serviciosCatalogo.find((s) => s.id === servicioId);
-  if (!servicio) {
+export async function ejecutarPagoServicioATM(servicioId: string, monto: number) {
+  if (!(monto > 0)) {
+    throw new Error("Ingrese el monto a pagar");
+  }
+
+  const { data: servicio, error } = await db()
+    .from("servicios")
+    .select("nombre_servicio, institucion, npe")
+    .eq("id_servicio", Number(servicioId))
+    .single();
+
+  if (error || !servicio) {
     throw new Error("Servicio no encontrado");
   }
 
-  const costo = monto || servicio.tarifaBase;
-
-  if (costo > cuentaEnMemoria.saldo) {
+  const cuenta = await getCuentaActiva();
+  if (monto > cuenta.saldo) {
     throw new Error("Fondos insuficientes para realizar el pago");
   }
 
-  const saldoAnterior = cuentaEnMemoria.saldo;
-  const saldoPosterior = saldoAnterior - costo;
-  const autorizacion = `AUTH-PKMN-${Math.floor(100000 + Math.random() * 900000)}`;
+  const descripcion = `Pago ${servicio.nombre_servicio} - ${servicio.institucion} (NPE ${servicio.npe})`;
+  const resultado = await procesarTransaccion("PAGO_SERVICIO", descripcion.slice(0, 150), -monto);
+  return { ...resultado, comprobante: resultado.transaccion.referencia };
+}
 
-  cuentaEnMemoria.saldo = saldoPosterior;
+export interface DatosCuentaEditables {
+  nombre?: string;
+  tipoCuenta?: string;
+  saldo?: number;
+  pin?: string;
+}
 
-  const nuevaTx: TransaccionATM = {
-    id: `TX-${Date.now()}`,
-    numeroCuenta: cuentaEnMemoria.numeroCuenta,
-    tipo: "PAGO_SERVICIO",
-    monto: costo,
-    saldoAnterior,
-    saldoPosterior,
-    descripcion: `Pago de servicio: ${servicio.nombre}`,
-    referencia: autorizacion,
-    estado: "EXITOSA",
-    fecha: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) + ", Hoy",
-  };
+export async function updateDatosCuenta(datos: DatosCuentaEditables): Promise<CuentaPokemon> {
+  const cambios: Record<string, string | number> = {};
 
-  transaccionesEnMemoria = [nuevaTx, ...transaccionesEnMemoria];
+  if (datos.nombre?.trim()) cambios.nombre_titular = datos.nombre.trim().slice(0, 100);
+  if (datos.tipoCuenta?.trim()) cambios.tipo_cuenta = datos.tipoCuenta.trim().slice(0, 50);
+  if (datos.saldo !== undefined) {
+    if (isNaN(datos.saldo) || datos.saldo < 0) throw new Error("El saldo debe ser un número mayor o igual a 0");
+    cambios.saldo_disponible = Math.round(datos.saldo * 100) / 100;
+  }
+  if (datos.pin) {
+    if (!/^\d{4}$/.test(datos.pin)) throw new Error("El PIN debe tener 4 dígitos");
+    cambios.pin = datos.pin;
+  }
 
-  if (supabase) {
-    try {
-      await supabase
-        .from("pokemon_bank_cuentas")
-        .update({ saldo: saldoPosterior, updated_at: new Date().toISOString() })
-        .eq("numero_cuenta", cuentaEnMemoria.numeroCuenta);
-
-      await supabase.from("pokemon_bank_transacciones").insert({
-        numero_cuenta: cuentaEnMemoria.numeroCuenta,
-        tipo_transaccion: "PAGO_SERVICIO",
-        monto: costo,
-        saldo_anterior: saldoAnterior,
-        saldo_posterior: saldoPosterior,
-        descripcion: nuevaTx.descripcion,
-        referencia: autorizacion,
-      });
-    } catch {
-      // Ignorar
+  if (Object.keys(cambios).length > 0) {
+    const { error } = await db().from("cuentas").update(cambios).eq("id_cuenta", ID_CUENTA_ATM);
+    if (error) {
+      throw new Error("No se pudieron guardar los cambios en la base de datos");
     }
   }
 
-  return {
-    success: true,
-    cuenta: cuentaEnMemoria,
-    transaccion: nuevaTx,
-    comprobante: autorizacion,
-  };
+  return getCuentaATM();
 }
-
-export async function getTransaccionesATM(): Promise<TransaccionATM[]> {
-  return transaccionesEnMemoria;
-}
-
-export async function updateDatosCuenta(datos: Partial<CuentaPokemon>): Promise<CuentaPokemon> {
-  cuentaEnMemoria = {
-    ...cuentaEnMemoria,
-    ...datos,
-  };
-  return cuentaEnMemoria;
-}
-

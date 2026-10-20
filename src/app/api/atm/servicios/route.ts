@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { serviciosCatalogo } from "@/lib/atm-service";
+import { getServiciosATM } from "@/lib/atm-service";
 
 export async function GET() {
-  return NextResponse.json({ servicios: serviciosCatalogo });
+  try {
+    const servicios = await getServiciosATM();
+    return NextResponse.json({ servicios });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error al obtener servicios";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
-

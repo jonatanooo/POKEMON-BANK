@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const servicioId = body.servicioId;
-    const monto = body.monto ? parseFloat(body.monto) : undefined;
+    const monto = parseFloat(body.monto);
 
     if (!servicioId) {
       return NextResponse.json(
@@ -14,7 +14,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const resultado = await ejecutarPagoServicioATM(servicioId, monto);
+    if (isNaN(monto) || monto <= 0) {
+      return NextResponse.json(
+        { error: "El monto a pagar debe ser un número válido mayor a 0" },
+        { status: 400 }
+      );
+    }
+
+    const resultado = await ejecutarPagoServicioATM(String(servicioId), monto);
     return NextResponse.json(resultado);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error al procesar el pago de servicio";

@@ -201,26 +201,12 @@ async function procesarTransaccion(
   return { success: true, cuenta, transaccion };
 }
 
-export async function ejecutarDepositoATM(monto: number) {
-  if (monto <= 0) {
-    throw new Error("El monto a depositar debe ser mayor a 0");
-  }
-
-  await getCuentaActiva();
-  return procesarTransaccion("DEPOSITO", "Depósito en efectivo en Cajero ATM", monto);
-}
-
-export async function ejecutarRetiroATM(monto: number, pinIngresado?: string) {
-  if (monto <= 0) {
-    throw new Error("El monto a retirar debe ser mayor a 0");
-  }
+// Valida el PIN y lo registra en auditoría
+async function validarPin(pinIngresado?: string) {
   if (!pinIngresado || !/^\d{4}$/.test(pinIngresado)) {
     throw new Error("Ingrese un PIN de 4 dígitos");
   }
 
-  const cuenta = await getCuentaActiva();
-
-  // Valida el PIN y lo registra en auditoría
   const { data, error } = await db().rpc("sp_validarpin", {
     p_id_cuenta: ID_CUENTA_ATM,
     p_pin: pinIngresado,
@@ -234,6 +220,25 @@ export async function ejecutarRetiroATM(monto: number, pinIngresado?: string) {
   if (!validacion || validacion.estado !== "Exito") {
     throw new Error(validacion?.mensaje || "PIN de seguridad incorrecto");
   }
+}
+
+export async function ejecutarDepositoATM(monto: number, pinIngresado?: string) {
+  if (monto <= 0) {
+    throw new Error("El monto a depositar debe ser mayor a 0");
+  }
+
+  await getCuentaActiva();
+  await validarPin(pinIngresado);
+  return procesarTransaccion("DEPOSITO", "Depósito en efectivo en Cajero ATM", monto);
+}
+
+export async function ejecutarRetiroATM(monto: number, pinIngresado?: string) {
+  if (monto <= 0) {
+    throw new Error("El monto a retirar debe ser mayor a 0");
+  }
+
+  const cuenta = await getCuentaActiva();
+  await validarPin(pinIngresado);
 
   if (monto > cuenta.saldo) {
     throw new Error("Fondos insuficientes en la cuenta");

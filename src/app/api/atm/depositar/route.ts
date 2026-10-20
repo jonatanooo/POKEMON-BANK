@@ -5,6 +5,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const monto = parseFloat(body.monto);
+    const pin = body.pin ? String(body.pin).trim() : undefined;
 
     if (isNaN(monto) || monto <= 0) {
       return NextResponse.json(
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const resultado = await ejecutarDepositoATM(monto);
+    const resultado = await ejecutarDepositoATM(monto, pin);
     return NextResponse.json(resultado);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error al procesar el depósito";

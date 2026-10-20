@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  // Permite abrir el servidor de desarrollo en http://127.0.0.1:3000 además de localhost
+  // Permite abrir el proyecto en 127.0.0.1
   allowedDevOrigins: ["127.0.0.1"],
   experimental: {
     agentFeedback: true,

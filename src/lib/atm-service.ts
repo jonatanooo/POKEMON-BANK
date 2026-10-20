@@ -1,10 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-// =========================================================================
-// 🏦 ATM SERVICE & DATABASE LAYER - POKÉMON BANK
-// Tablas: cuentas, transacciones, servicios, auditoria_accesos
-// Procedimientos: sp_validarpin, sp_procesartransaccion
-// =========================================================================
+// Unión de la db con el cajero
 
 export interface CuentaPokemon {
   numeroCuenta: string;
@@ -43,15 +39,15 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 export const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
-// Cuenta asignada a este cajero
+// Cuenta del cajero
 const ID_CUENTA_ATM = process.env.ATM_ID_CUENTA || "34526685463256668";
 
-// Datos de presentación que no existen en la tabla cuentas
+// Datos que no están en la db
 const FOTO_PERFIL = "/ICONOS%20POKEMON%20BANK/CHARIZARD.png";
 const NIVEL_ENTRENADOR = "Nivel Maestro Pokémon ★★★";
 const LIMITE_RETIRO = 25000;
 
-// Valores de tipo_transaccion guardados en la base de datos
+// Tipos de transacción en la db
 const TIPO_BD: Record<TipoTransaccion, string> = {
   DEPOSITO: "Depósito",
   RETIRO: "Retiro",
@@ -71,7 +67,7 @@ function tipoDesdeBD(tipo: string): TipoTransaccion {
   return "PAGO_SERVICIO";
 }
 
-// fecha_hora se guarda en UTC (timestamp sin zona horaria)
+// La db guarda la hora en UTC
 function formatearFecha(fechaHora: string): string {
   const fecha = new Date(fechaHora.endsWith("Z") ? fechaHora : `${fechaHora}Z`);
   return fecha.toLocaleString("es-SV", {
@@ -93,9 +89,7 @@ function iconoServicio(nombre: string): string {
   return "🧾";
 }
 
-// =========================================================================
-// 🚀 OPERACIONES BANCARIAS DEL ATM
-// =========================================================================
+// Operaciones del cajero
 
 export async function getCuentaATM(): Promise<CuentaPokemon> {
   const { data, error } = await db()
@@ -144,7 +138,7 @@ export async function getTransaccionesATM(limite = 20): Promise<TransaccionATM[]
     throw new Error("No se pudieron cargar las transacciones");
   }
 
-  // Se reconstruye el saldo de cada movimiento hacia atrás desde el saldo actual
+  // Saldo de cada movimiento
   let saldo = cuenta.saldo;
   return (data ?? []).map((tx) => {
     const monto = Number(tx.monto);
@@ -185,7 +179,7 @@ export async function getServiciosATM(): Promise<ServicioATM[]> {
   }));
 }
 
-// Registra el movimiento y actualiza el saldo en una sola llamada a la BD
+// Guarda la transacción y actualiza el saldo
 async function procesarTransaccion(
   tipo: TipoTransaccion,
   descripcion: string,
@@ -226,7 +220,7 @@ export async function ejecutarRetiroATM(monto: number, pinIngresado?: string) {
 
   const cuenta = await getCuentaActiva();
 
-  // sp_validarpin también guarda el intento en auditoria_accesos
+  // Valida el PIN y lo registra en auditoría
   const { data, error } = await db().rpc("sp_validarpin", {
     p_id_cuenta: ID_CUENTA_ATM,
     p_pin: pinIngresado,

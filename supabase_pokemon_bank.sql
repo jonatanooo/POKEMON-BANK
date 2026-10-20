@@ -1,10 +1,6 @@
--- =========================================================================
--- 🏦 POKÉMON BANK - ESQUEMA DE BASE DE DATOS PARA CAJERO AUTOMÁTICO (ATM)
--- Proyecto Supabase: vknqulxhybbjaqhdttie
--- Compatible con PostgreSQL y Supabase SQL Editor
--- =========================================================================
+-- Base de datos de Pokémon Bank
 
--- 1. TABLA DE CUENTAS
+-- Cuentas
 CREATE TABLE IF NOT EXISTS public.cuentas (
     id_cuenta VARCHAR(20) PRIMARY KEY,
     nombre_titular VARCHAR(100) NOT NULL,
@@ -15,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.cuentas (
     fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. TABLA DE TRANSACCIONES (monto positivo = ingreso, negativo = egreso)
+-- Transacciones
 CREATE TABLE IF NOT EXISTS public.transacciones (
     id_transaccion SERIAL PRIMARY KEY,
     id_cuenta VARCHAR(20) NOT NULL,
@@ -27,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.transacciones (
         REFERENCES public.cuentas(id_cuenta) ON DELETE CASCADE
 );
 
--- 3. TABLA DE SERVICIOS PARA PAGO
+-- Servicios
 CREATE TABLE IF NOT EXISTS public.servicios (
     id_servicio SERIAL PRIMARY KEY,
     nombre_servicio VARCHAR(50) NOT NULL,
@@ -35,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.servicios (
     npe VARCHAR(30) NOT NULL UNIQUE
 );
 
--- 4. TABLA DE AUDITORÍA DE ACCESOS (intentos de PIN)
+-- Auditoría de accesos
 CREATE TABLE IF NOT EXISTS public.auditoria_accesos (
     id_auditoria SERIAL PRIMARY KEY,
     id_cuenta VARCHAR(20) NOT NULL,
@@ -46,9 +42,7 @@ CREATE TABLE IF NOT EXISTS public.auditoria_accesos (
         REFERENCES public.cuentas(id_cuenta)
 );
 
--- =========================================================================
--- 📊 VISTA DE ESTADÍSTICAS
--- =========================================================================
+-- Vista de transacciones
 CREATE OR REPLACE VIEW public.vw_estadisticastransacciones AS
 SELECT
     id_transaccion,
@@ -60,11 +54,7 @@ SELECT
     to_char(fecha_hora, 'DD/MM/YY | HH24:MI') AS fecha_formateada
 FROM public.transacciones t;
 
--- =========================================================================
--- ⚙️ PROCEDIMIENTOS ALMACENADOS
--- =========================================================================
-
--- Registra la transacción y actualiza el saldo de la cuenta
+-- Guarda la transacción y actualiza el saldo
 CREATE OR REPLACE FUNCTION public.sp_procesartransaccion(
     p_id_cuenta VARCHAR,
     p_tipo_transaccion VARCHAR,
@@ -84,7 +74,7 @@ BEGIN
 END;
 $$;
 
--- Valida el PIN y guarda el intento en auditoria_accesos
+-- Valida el PIN
 CREATE OR REPLACE FUNCTION public.sp_validarpin(
     p_id_cuenta VARCHAR,
     p_pin VARCHAR
@@ -110,16 +100,14 @@ BEGIN
 END;
 $$;
 
--- =========================================================================
--- 🌟 DATOS INICIALES (SEED DATA)
--- =========================================================================
+-- Datos iniciales
 
--- Cuenta del cajero (PIN de ejemplo)
+-- Cuenta
 INSERT INTO public.cuentas (id_cuenta, nombre_titular, tipo_cuenta, pin, saldo_disponible, estado_cuenta)
 VALUES ('34526685463256668', 'JONATAN ALEXANDER ORELLANA HERNANDEZ', 'Cuenta de Ahorro', '1234', 0.00, 'Activa')
 ON CONFLICT (id_cuenta) DO NOTHING;
 
--- Catálogo de servicios
+-- Servicios
 INSERT INTO public.servicios (nombre_servicio, institucion, npe)
 VALUES
     ('Energía Eléctrica', 'Centro Pokémon', '324235346564532423'),
@@ -128,6 +116,6 @@ VALUES
     ('Agua Potable', 'ANDA', '556677889900112233')
 ON CONFLICT (npe) DO NOTHING;
 
--- Movimientos iniciales (pasan por el procedimiento para que el saldo cuadre)
+-- Ejemplo de movimientos
 -- SELECT sp_procesartransaccion('34526685463256668', 'Depósito', 'Ingreso de Trabajo', 300.12);
 -- SELECT sp_procesartransaccion('34526685463256668', 'Pago de Servicios', 'Pago de Gasolina', -100.50);

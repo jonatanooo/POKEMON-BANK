@@ -11,7 +11,7 @@ const ETIQUETA_TIPO: Record<TransaccionATM["tipo"], string> = {
   PAGO_SERVICIO: "PAGO DE SERVICIO",
 };
 
-// Se muestra mientras llegan los datos reales de la base de datos
+// Cuenta vacía mientras carga
 const CUENTA_VACIA: CuentaPokemon = {
   numeroCuenta: "—",
   nombre: "Conectando...",
@@ -32,33 +32,33 @@ export default function PokemonBankApp() {
   const [showDbModal, setShowDbModal] = useState<boolean>(false);
   const [loadingAction, setLoadingAction] = useState<boolean>(false);
 
-  // 🎫 ESTADO DEL COMPROBANTE/TICKET TÉRMICO
+  // Comprobante
   const [activeReceipt, setActiveReceipt] = useState<TransaccionATM | null>(null);
 
-  // 🔑 ESTADO PARA RETIRO CON PIN
+  // Retiro con PIN
   const [withdrawPin, setWithdrawPin] = useState<string>("");
   const [withdrawAmount, setWithdrawAmount] = useState<number | null>(null);
   const [showPinPad, setShowPinPad] = useState<boolean>(false);
 
-  // 🔌 CUENTA CARGADA DESDE LA TABLA cuentas
+  // Cuenta y estado de la db
   const [cuenta, setCuenta] = useState<CuentaPokemon>(CUENTA_VACIA);
   const [dbStatus, setDbStatus] = useState<"conectando" | "conectado" | "error">("conectando");
 
-  // Campos para el modal de edición de la cuenta en la BD
+  // Campos del modal de la cuenta
   const [editNombre, setEditNombre] = useState("");
   const [editTipo, setEditTipo] = useState("");
   const [editSaldo, setEditSaldo] = useState("");
   const [editPin, setEditPin] = useState("");
 
-  // Catálogo de la tabla servicios
+  // Servicios
   const [servicios, setServicios] = useState<ServicioATM[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [montoServicio, setMontoServicio] = useState<string>("");
 
-  // Historial de la tabla transacciones
+  // Transacciones
   const [transactions, setTransactions] = useState<TransaccionATM[]>([]);
 
-  // 🔌 Carga desde los endpoints de API conectados a Supabase
+  // Unión de la db con cuenta, transacciones y servicios
   const recargarCuenta = async () => {
     try {
       const res = await fetch("/api/cuenta");
@@ -103,7 +103,7 @@ export default function PokemonBankApp() {
     recargarServicios();
   }, []);
 
-  // Web Audio retro sound effects
+  // Sonidos
   const playSound = (type: "beep" | "success" | "dispense" | "error") => {
     if (!soundEnabled || typeof window === "undefined") return;
     try {
@@ -153,7 +153,7 @@ export default function PokemonBankApp() {
         osc.stop(ctx.currentTime + 0.25);
       }
     } catch {
-      // AudioContext policy
+      // El navegador puede bloquear el audio
     }
   };
 
@@ -162,9 +162,7 @@ export default function PokemonBankApp() {
     setTimeout(() => setStatusMessage(null), duration);
   };
 
-  // =========================================================================
-  // 💰 OPERACIÓN: DEPÓSITO
-  // =========================================================================
+  // Depósito
   const handleDeposit = async (amount: number) => {
     if (amount <= 0) {
       playSound("error");
@@ -200,9 +198,7 @@ export default function PokemonBankApp() {
     }
   };
 
-  // =========================================================================
-  // 🏧 OPERACIÓN: RETIRO CON VALIDACIÓN DE PIN
-  // =========================================================================
+  // Retiro
   const iniciarRetiro = (amount: number) => {
     if (amount <= 0) {
       playSound("error");
@@ -265,9 +261,7 @@ export default function PokemonBankApp() {
     }
   };
 
-  // =========================================================================
-  // ⚡ OPERACIÓN: PAGO DE SERVICIOS
-  // =========================================================================
+  // Pago de servicios
   const handlePayService = async (serviceId: string, costo: number) => {
     const serv = servicios.find((s) => s.id === serviceId);
     if (!serv) return;
@@ -311,9 +305,7 @@ export default function PokemonBankApp() {
     }
   };
 
-  // =========================================================================
-  // ⚙️ GUARDAR DATOS EN BACKEND / BASE DE DATOS
-  // =========================================================================
+  // Guardar cambios de la cuenta en la db
   const handleGuardarDatosDB = async () => {
     const pin = editPin.trim();
     if (pin && !/^\d{4}$/.test(pin)) {
@@ -388,7 +380,7 @@ export default function PokemonBankApp() {
 
   return (
     <main className="min-h-screen w-full flex flex-col items-center justify-center p-1 sm:p-2 md:p-3 bg-gradient-to-br from-slate-950 via-[#0d1527] to-[#1e0d16] select-none text-black">
-      {/* Barra superior de herramientas y controles */}
+      {/* Barra superior */}
       <div
         className="w-full flex items-center justify-between mb-1.5 px-2 text-xs text-slate-400 transition-all duration-300"
         style={{ maxWidth: getContainerStyle().maxWidth }}
@@ -414,7 +406,7 @@ export default function PokemonBankApp() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          {/* Botón para abrir configuración de Base de Datos */}
+          {/* Botón de tablas y db */}
           <button
             onClick={() => {
               playSound("beep");
@@ -431,7 +423,7 @@ export default function PokemonBankApp() {
             <span>Tablas & BD</span>
           </button>
 
-          {/* Selector de Tamaño de Pantalla */}
+          {/* Tamaño de pantalla */}
           <div className="flex items-center gap-1 bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-lg border border-slate-700/60">
             <span className="text-[10px] sm:text-xs text-slate-400 font-semibold mr-1">Pantalla:</span>
             <button
@@ -508,15 +500,12 @@ export default function PokemonBankApp() {
         </div>
       </div>
 
-      {/* Main Container - Keeps Pokedex exact aspect ratio 4016:2920 */}
+      {/* Pokedex */}
       <div
         className="relative pokedex-glow transition-all duration-300 my-auto"
         style={getContainerStyle()}
       >
-        {/* ========================================================= */}
-        {/* 1. SCREEN LAYER (z-10) Inside transparent cutout */}
-        {/* Coordinates: left: 10.2%, top: 22.2%, width: 81.8%, height: 68.0% */}
-        {/* ========================================================= */}
+        {/* Pantalla */}
         <div
           className="absolute z-10 bg-white overflow-hidden flex flex-col"
           style={{
@@ -527,7 +516,7 @@ export default function PokemonBankApp() {
             borderRadius: "14px",
           }}
         >
-          {/* Toast de notificación rápida */}
+          {/* Notificación */}
           {statusMessage && (
             <div
               className={`absolute top-2 left-4 right-4 z-50 px-4 py-2 rounded-xl font-orbitron text-xs sm:text-sm text-center shadow-xl border animate-bounce ${
@@ -542,12 +531,11 @@ export default function PokemonBankApp() {
             </div>
           )}
 
-          {/* PANTALLA PRINCIPAL (Fiel a la imagen de referencia original) */}
+          {/* Menú principal */}
           {activeScreen === "main" && (
             <div className="w-full h-full flex flex-col justify-between p-[3.5%] sm:p-[4%]">
-              {/* TOP ROW: Charizard Box + User Details */}
+              {/* Foto y datos de la cuenta */}
               <div className="flex items-center gap-[4%] w-full">
-                {/* Charizard Silhouette in 1px dashed box with border-radius */}
                 <div
                   className="w-[21%] aspect-square rounded-2xl border-[1px] border-dashed border-zinc-600/80 flex items-center justify-center p-[4%] bg-white flex-shrink-0 shadow-xs"
                 >
@@ -559,7 +547,6 @@ export default function PokemonBankApp() {
                   />
                 </div>
 
-                {/* User Info (Campos genéricos vinculados a base de datos) */}
                 <div className="flex flex-col justify-center min-w-0 flex-1">
                   <h1 className="font-orbitron font-black text-black leading-tight tracking-wider text-[clamp(13px,1.9vw,28px)] uppercase truncate">
                     {cuenta.nombre}
@@ -573,16 +560,15 @@ export default function PokemonBankApp() {
                 </div>
               </div>
 
-              {/* QUESTION PROMPT */}
               <div className="w-full pt-[0.5%]">
                 <h2 className="font-orbitron font-extrabold text-black text-[clamp(12px,1.75vw,25px)]">
                   ¿Que servicio necesitar realizar?
                 </h2>
               </div>
 
-              {/* 4 ACTION BUTTONS GRID (CON ICONOS VERDES DE LA CARPETA ICONOS POKEMON BANK) */}
+              {/* Botones del menú */}
               <div className="grid grid-cols-2 gap-x-[3.8%] gap-y-[3.5%] w-full pb-[1%]">
-                {/* 1. Depositar - Usa PedirDinero.png */}
+                {/* Depositar */}
                 <button
                   onClick={() => {
                     playSound("beep");
@@ -602,7 +588,7 @@ export default function PokemonBankApp() {
                   </span>
                 </button>
 
-                {/* 2. Consultar saldo - Usa Monedero.png */}
+                {/* Consultar saldo */}
                 <button
                   onClick={() => {
                     playSound("beep");
@@ -623,7 +609,7 @@ export default function PokemonBankApp() {
                   </span>
                 </button>
 
-                {/* 3. Retirar - Usa RetirarDinero.png */}
+                {/* Retirar */}
                 <button
                   onClick={() => {
                     playSound("beep");
@@ -645,7 +631,7 @@ export default function PokemonBankApp() {
                   </span>
                 </button>
 
-                {/* 4. Pagar servicios - Usa PagarServicios.png */}
+                {/* Pagar servicios */}
                 <button
                   onClick={() => {
                     playSound("beep");
@@ -668,9 +654,7 @@ export default function PokemonBankApp() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* PANTALLA: DEPOSITAR DINERO EN CAJERO */}
-          {/* ========================================================= */}
+          {/* Pantalla de depósito */}
           {activeScreen === "depositar" && (
             <div className="w-full h-full flex flex-col justify-between p-[4%] bg-slate-50 text-slate-900">
               <div className="flex items-center justify-between border-b pb-2 border-slate-300">
@@ -746,9 +730,7 @@ export default function PokemonBankApp() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* PANTALLA: CONSULTAR SALDO Y MOVIMIENTOS */}
-          {/* ========================================================= */}
+          {/* Pantalla de consulta */}
           {activeScreen === "consultar" && (
             <div className="w-full h-full flex flex-col justify-between p-[4%] bg-slate-50 text-slate-900">
               <div className="flex items-center justify-between border-b pb-2 border-slate-300">
@@ -761,7 +743,7 @@ export default function PokemonBankApp() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 my-auto py-2">
-                {/* Tarjeta de información de la cuenta */}
+                {/* Datos de la cuenta */}
                 <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
                   <div>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
@@ -785,7 +767,7 @@ export default function PokemonBankApp() {
                   </div>
                 </div>
 
-                {/* Libro contable / Historial de transacciones */}
+                {/* Últimos movimientos */}
                 <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col">
                   <div className="flex items-center justify-between mb-1.5">
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
@@ -845,9 +827,7 @@ export default function PokemonBankApp() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* PANTALLA: RETIRO DE EFECTIVO CON VALIDACIÓN DE PIN */}
-          {/* ========================================================= */}
+          {/* Pantalla de retiro */}
           {activeScreen === "retirar" && (
             <div className="w-full h-full flex flex-col justify-between p-[4%] bg-slate-50 text-slate-900">
               <div className="flex items-center justify-between border-b pb-2 border-slate-300">
@@ -866,7 +846,7 @@ export default function PokemonBankApp() {
               </div>
 
               {!showPinPad ? (
-                // Paso 1: Selección de monto a retirar
+                // Paso 1: monto
                 <div className="text-center my-auto">
                   <p className="text-xs text-slate-500">Saldo disponible</p>
                   <p className="font-orbitron font-bold text-lg text-slate-800">
@@ -909,7 +889,7 @@ export default function PokemonBankApp() {
                   </div>
                 </div>
               ) : (
-                // Paso 2: Teclado numérico de seguridad PIN
+                // Paso 2: PIN
                 <div className="my-auto max-w-xs mx-auto text-center bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
                   <div className="flex items-center justify-center gap-1.5 text-amber-700 font-orbitron font-bold text-xs mb-1">
                     <span>🔒</span>
@@ -919,7 +899,7 @@ export default function PokemonBankApp() {
                     Monto a retirar: <strong className="text-black font-orbitron">${withdrawAmount?.toLocaleString()}</strong>
                   </p>
 
-                  {/* Indicador de 4 dígitos */}
+                  {/* Dígitos del PIN */}
                   <div className="flex justify-center gap-2.5 mb-3">
                     {[0, 1, 2, 3].map((idx) => (
                       <div
@@ -935,7 +915,7 @@ export default function PokemonBankApp() {
                     ))}
                   </div>
 
-                  {/* Teclado en pantalla del ATM */}
+                  {/* Teclado */}
                   <div className="grid grid-cols-3 gap-1.5 max-w-[200px] mx-auto mb-2">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, "C", 0, "⌫"].map((keyVal) => (
                       <button
@@ -996,9 +976,7 @@ export default function PokemonBankApp() {
             </div>
           )}
 
-          {/* ========================================================= */}
-          {/* PANTALLA: PAGO DE SERVICIOS */}
-          {/* ========================================================= */}
+          {/* Pantalla de pago de servicios */}
           {activeScreen === "pagar" && (
             <div className="w-full h-full flex flex-col justify-between p-[4%] bg-slate-50 text-slate-900">
               <div className="flex items-center justify-between border-b pb-2 border-slate-300">
@@ -1075,10 +1053,7 @@ export default function PokemonBankApp() {
           )}
         </div>
 
-        {/* ========================================================= */}
-        {/* 2. POKEDEX FRAME OVERLAY (z-20) */}
-        {/* Uses the public/assets/POKEDEX.png file */}
-        {/* ========================================================= */}
+        {/* Marco de la pokedex */}
         <img
           src="/assets/POKEDEX.png"
           alt="Pokedex Frame"
@@ -1086,10 +1061,7 @@ export default function PokemonBankApp() {
           draggable={false}
         />
 
-        {/* ========================================================= */}
-        {/* 3. POKEMON BANK LOGO (z-30) */}
-        {/* Uses the public/assets/POKEMON BANK PNG.png file */}
-        {/* ========================================================= */}
+        {/* Logo */}
         <div
           className="absolute z-30 pointer-events-auto"
           style={{
@@ -1111,9 +1083,7 @@ export default function PokemonBankApp() {
         </div>
       </div>
 
-      {/* ========================================================= */}
-      {/* 4. MODAL DE TICKET / COMPROBANTE TÉRMICO DE LA OPERACIÓN */}
-      {/* ========================================================= */}
+      {/* Comprobante */}
       {activeReceipt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
           <div className="bg-amber-50 text-slate-900 rounded-xl w-full max-w-sm p-5 font-mono shadow-2xl border-2 border-amber-200 relative">
@@ -1200,9 +1170,7 @@ export default function PokemonBankApp() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* 5. MODAL PARA CONFIGURACIÓN DE TABLAS Y BASE DE DATOS */}
-      {/* ========================================================= */}
+      {/* Modal de la db */}
       {showDbModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 text-slate-200 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1328,7 +1296,7 @@ export default function PokemonBankApp() {
         </div>
       )}
 
-      {/* Footer Info */}
+      {/* Pie de página */}
       <footer className="mt-3 text-center text-xs text-slate-500 font-sans">
         Pokémon Bank Terminal Interface • ATM 100% Funcional con Depósitos, Retiros, Consultas y Pagos
       </footer>

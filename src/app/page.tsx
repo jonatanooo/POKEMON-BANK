@@ -1,47 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { CuentaPokemon, TransaccionATM, ServicioATM } from "@/lib/atm-service";
 
 type ServiceType = "main" | "depositar" | "consultar" | "retirar" | "pagar";
 
-// =========================================================================
-// 🗄️ MODELO GENÉRICO DE CUENTA BANCARIA POKÉMON (LISTO PARA BASE DE DATOS)
-// Compatible con Supabase, PostgreSQL, MySQL o APIs REST.
-// =========================================================================
-export interface CuentaPokemon {
-  id: string;
-  idUsuario?: number | null;
-  nombre: string;
-  tipoCuenta: string;
-  numeroCuenta: string;
-  saldo: number;
-  pinCajero?: string;
-  estado?: "ACTIVA" | "BLOQUEADA" | "SUSPENDIDA";
-  fotoPerfil: string;
-  nivelEntrenador: string;
-  limiteRetiroDiario?: number;
-}
+const ETIQUETA_TIPO: Record<TransaccionATM["tipo"], string> = {
+  DEPOSITO: "DEPÓSITO",
+  RETIRO: "RETIRO",
+  PAGO_SERVICIO: "PAGO DE SERVICIO",
+};
 
-export interface TransaccionATM {
-  id: string;
-  numeroCuenta?: string;
-  tipo: "DEPOSITO" | "RETIRO" | "PAGO_SERVICIO" | "CONSULTA";
-  monto: number;
-  saldoAnterior: number;
-  saldoPosterior: number;
-  descripcion: string;
-  referencia: string;
-  estado: "EXITOSA" | "RECHAZADA";
-  fecha: string;
-}
-
-export interface ServicioATM {
-  id: string;
-  nombre: string;
-  categoria: string;
-  tarifaBase: number;
-  icono: string;
-}
+// Se muestra mientras llegan los datos reales de la base de datos
+const CUENTA_VACIA: CuentaPokemon = {
+  numeroCuenta: "—",
+  nombre: "Conectando...",
+  tipoCuenta: "",
+  saldo: 0,
+  estado: "",
+  fotoPerfil: "/ICONOS%20POKEMON%20BANK/CHARIZARD.png",
+  nivelEntrenador: "",
+  limiteRetiroDiario: 0,
+};
 
 export default function PokemonBankApp() {
   const [activeScreen, setActiveScreen] = useState<ServiceType>("main");
@@ -60,115 +40,67 @@ export default function PokemonBankApp() {
   const [withdrawAmount, setWithdrawAmount] = useState<number | null>(null);
   const [showPinPad, setShowPinPad] = useState<boolean>(false);
 
-  // 🔌 ESTADO GENÉRICO DE LA CUENTA
-  const [cuenta, setCuenta] = useState<CuentaPokemon>({
-    id: "PKMN-USR-60",
-    idUsuario: 60,
-    nombre: "JONATAN ALEXANDER ORELLANA HERNANDEZ",
-    tipoCuenta: "CUENTA DE AHORRO",
-    numeroCuenta: "34526685463256668",
-    saldo: 1450250.0,
-    pinCajero: "1234",
-    fotoPerfil: "/ICONOS%20POKEMON%20BANK/CHARIZARD.png",
-    nivelEntrenador: "Nivel Maestro Pokémon ★★★",
-    limiteRetiroDiario: 25000.0,
-  });
+  // 🔌 CUENTA CARGADA DESDE LA TABLA cuentas
+  const [cuenta, setCuenta] = useState<CuentaPokemon>(CUENTA_VACIA);
+  const [dbStatus, setDbStatus] = useState<"conectando" | "conectado" | "error">("conectando");
 
-  // Campos para el modal de edición/simulación de DB
-  const [editNombre, setEditNombre] = useState(cuenta.nombre);
-  const [editNumero, setEditNumero] = useState(cuenta.numeroCuenta);
-  const [editTipo, setEditTipo] = useState(cuenta.tipoCuenta);
-  const [editSaldo, setEditSaldo] = useState(cuenta.saldo.toString());
-  const [editPin, setEditPin] = useState("1234");
+  // Campos para el modal de edición de la cuenta en la BD
+  const [editNombre, setEditNombre] = useState("");
+  const [editTipo, setEditTipo] = useState("");
+  const [editSaldo, setEditSaldo] = useState("");
+  const [editPin, setEditPin] = useState("");
 
-  // Lista de servicios de pago
-  const [servicios] = useState<ServicioATM[]>([
-    { id: "silph_co", nombre: "Silph Co. Electricidad", categoria: "Electricidad", tarifaBase: 850, icono: "⚡" },
-    { id: "gym_celeste", nombre: "Gym Celeste (Agua)", categoria: "Agua", tarifaBase: 420, icono: "💧" },
-    { id: "poke_net", nombre: "Poké-Net 5G Banda Ancha", categoria: "Telecomunicaciones", tarifaBase: 650, icono: "📶" },
-    { id: "centro_pokemon", nombre: "Centro Pokémon Cuota Médica", categoria: "Salud", tarifaBase: 1200, icono: "🏥" },
-  ]);
-  const [selectedServiceId, setSelectedServiceId] = useState<string>("silph_co");
+  // Catálogo de la tabla servicios
+  const [servicios, setServicios] = useState<ServicioATM[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [montoServicio, setMontoServicio] = useState<string>("");
 
-  // Historial de transacciones
-  const [transactions, setTransactions] = useState<TransaccionATM[]>([
-    {
-      id: "TX-PKMN-901",
-      tipo: "DEPOSITO",
-      monto: 50000,
-      saldoAnterior: 1400250,
-      saldoPosterior: 1450250,
-      descripcion: "Recompensa Campeón Liga Pokémon",
-      referencia: "REF-994821",
-      estado: "EXITOSA",
-      fecha: "Hoy, 10:30 AM",
-    },
-    {
-      id: "TX-PKMN-902",
-      tipo: "RETIRO",
-      monto: 6000,
-      saldoAnterior: 1456250,
-      saldoPosterior: 1450250,
-      descripcion: "Compra Poké Mart (Ultra Balls x50)",
-      referencia: "REF-883719",
-      estado: "EXITOSA",
-      fecha: "Ayer, 04:15 PM",
-    },
-    {
-      id: "TX-PKMN-903",
-      tipo: "PAGO_SERVICIO",
-      monto: 1500,
-      saldoAnterior: 1451750,
-      saldoPosterior: 1450250,
-      descripcion: "Suscripción Silph Co. Cloud",
-      referencia: "REF-772611",
-      estado: "EXITOSA",
-      fecha: "12 Oct 2026",
-    },
-    {
-      id: "TX-PKMN-904",
-      tipo: "DEPOSITO",
-      monto: 12000,
-      saldoAnterior: 1438250,
-      saldoPosterior: 1450250,
-      descripcion: "Premio Victoria Gimnasio Celeste",
-      referencia: "REF-661502",
-      estado: "EXITOSA",
-      fecha: "10 Oct 2026",
-    },
-  ]);
+  // Historial de la tabla transacciones
+  const [transactions, setTransactions] = useState<TransaccionATM[]>([]);
 
-  // 🔌 Carga automática desde endpoint de API / Supabase
+  // 🔌 Carga desde los endpoints de API conectados a Supabase
   const recargarCuenta = async () => {
     try {
       const res = await fetch("/api/cuenta");
-      if (res.ok) {
-        const data = await res.json();
-        setCuenta((prev) => ({ ...prev, ...data }));
-        if (data.pinCajero) setEditPin(data.pinCajero);
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCuenta(data);
+      setDbStatus("conectado");
     } catch (e) {
-      console.warn("Usando datos locales de respaldo:", e);
+      console.warn("No se pudo cargar la cuenta:", e);
+      setDbStatus("error");
     }
   };
 
   const recargarTransacciones = async () => {
     try {
       const res = await fetch("/api/atm/transacciones");
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.transacciones) && data.transacciones.length > 0) {
-          setTransactions(data.transacciones);
-        }
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.transacciones)) {
+        setTransactions(data.transacciones);
       }
     } catch (e) {
       console.warn("Error cargando transacciones:", e);
     }
   };
 
+  const recargarServicios = async () => {
+    try {
+      const res = await fetch("/api/atm/servicios");
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.servicios)) {
+        setServicios(data.servicios);
+        setSelectedServiceId((prev) => prev ?? data.servicios[0]?.id ?? null);
+      }
+    } catch (e) {
+      console.warn("Error cargando servicios:", e);
+    }
+  };
+
   useEffect(() => {
     recargarCuenta();
     recargarTransacciones();
+    recargarServicios();
   }, []);
 
   // Web Audio retro sound effects
@@ -255,7 +187,7 @@ export default function PokemonBankApp() {
 
       playSound("success");
       setCuenta(data.cuenta);
-      setTransactions((prev) => [data.transaccion, ...prev]);
+      recargarTransacciones();
       setActiveReceipt(data.transaccion);
       showToast(`¡Depósito exitoso de $${amount.toLocaleString("es-MX", { minimumFractionDigits: 2 })}!`, "success", 3000);
       setCustomAmount("");
@@ -317,7 +249,7 @@ export default function PokemonBankApp() {
 
       playSound("dispense");
       setCuenta(data.cuenta);
-      setTransactions((prev) => [data.transaccion, ...prev]);
+      recargarTransacciones();
       setShowPinPad(false);
       setActiveReceipt(data.transaccion);
       showToast(`¡Retiro de $${withdrawAmount.toLocaleString("es-MX", { minimumFractionDigits: 2 })} exitoso! Tome su efectivo.`, "success", 3500);
@@ -336,11 +268,15 @@ export default function PokemonBankApp() {
   // =========================================================================
   // ⚡ OPERACIÓN: PAGO DE SERVICIOS
   // =========================================================================
-  const handlePayService = async (serviceId: string, customPrice?: number) => {
+  const handlePayService = async (serviceId: string, costo: number) => {
     const serv = servicios.find((s) => s.id === serviceId);
     if (!serv) return;
 
-    const costo = customPrice || serv.tarifaBase;
+    if (!(costo > 0)) {
+      playSound("error");
+      showToast("Ingrese el monto a pagar del servicio.", "error");
+      return;
+    }
     if (costo > cuenta.saldo) {
       playSound("error");
       showToast("Saldo insuficiente para pagar este servicio.", "error");
@@ -362,9 +298,10 @@ export default function PokemonBankApp() {
 
       playSound("success");
       setCuenta(data.cuenta);
-      setTransactions((prev) => [data.transaccion, ...prev]);
+      recargarTransacciones();
       setActiveReceipt(data.transaccion);
       showToast(`¡Pago exitoso de ${serv.nombre} por $${costo.toLocaleString("es-MX", { minimumFractionDigits: 2 })}!`, "success", 3000);
+      setMontoServicio("");
     } catch (err: unknown) {
       playSound("error");
       const msg = err instanceof Error ? err.message : "Error al procesar el pago";
@@ -378,13 +315,18 @@ export default function PokemonBankApp() {
   // ⚙️ GUARDAR DATOS EN BACKEND / BASE DE DATOS
   // =========================================================================
   const handleGuardarDatosDB = async () => {
-    const nuevoSaldo = parseFloat(editSaldo);
+    const pin = editPin.trim();
+    if (pin && !/^\d{4}$/.test(pin)) {
+      playSound("error");
+      showToast("El PIN debe tener 4 dígitos.", "error");
+      return;
+    }
+
     const payload = {
-      nombre: editNombre.trim() || cuenta.nombre,
-      numeroCuenta: editNumero.trim() || cuenta.numeroCuenta,
-      tipoCuenta: editTipo.trim() || cuenta.tipoCuenta,
-      saldo: !isNaN(nuevoSaldo) ? nuevoSaldo : cuenta.saldo,
-      pinCajero: editPin.trim() || "1234",
+      nombre: editNombre.trim(),
+      tipoCuenta: editTipo.trim(),
+      saldo: editSaldo.trim(),
+      pin: pin || undefined,
     };
 
     try {
@@ -394,21 +336,20 @@ export default function PokemonBankApp() {
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setCuenta((prev) => ({ ...prev, ...data.cuenta }));
-      } else {
-        setCuenta((prev) => ({ ...prev, ...payload }));
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "No se pudieron guardar los cambios");
       }
 
+      setCuenta(data.cuenta);
+      recargarTransacciones();
       setShowDbModal(false);
       playSound("success");
-      showToast("¡Datos de cuenta sincronizados exitosamente!", "success");
-    } catch {
-      setCuenta((prev) => ({ ...prev, ...payload }));
-      setShowDbModal(false);
-      playSound("success");
-      showToast("Datos actualizados localmente", "info");
+      showToast("¡Datos de cuenta guardados en la base de datos!", "success");
+    } catch (err: unknown) {
+      playSound("error");
+      const msg = err instanceof Error ? err.message : "Error al guardar en la base de datos";
+      showToast(msg, "error");
     }
   };
 
@@ -453,12 +394,22 @@ export default function PokemonBankApp() {
         style={{ maxWidth: getContainerStyle().maxWidth }}
       >
         <div className="flex items-center gap-2">
-          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span
+            className={`inline-block w-2.5 h-2.5 rounded-full animate-pulse ${
+              dbStatus === "conectado" ? "bg-emerald-500" : dbStatus === "error" ? "bg-rose-500" : "bg-amber-400"
+            }`}
+          ></span>
           <span className="font-orbitron font-semibold tracking-wider text-slate-300">
-            POKÉMON BANK ATM v3.0 • EN LÍNEA
+            POKÉMON BANK ATM v3.0 • {dbStatus === "conectado" ? "EN LÍNEA" : dbStatus === "error" ? "SIN CONEXIÓN" : "CONECTANDO"}
           </span>
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] font-mono text-emerald-400 bg-emerald-950/70 border border-emerald-700/60 px-2 py-0.5 rounded-full">
-            ● Supabase: vknqulxhybbjaqhdttie
+          <span
+            className={`hidden sm:inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+              dbStatus === "error"
+                ? "text-rose-400 bg-rose-950/70 border-rose-700/60"
+                : "text-emerald-400 bg-emerald-950/70 border-emerald-700/60"
+            }`}
+          >
+            ● Supabase: {dbStatus === "error" ? "error de conexión" : dbStatus}
           </span>
         </div>
 
@@ -468,10 +419,9 @@ export default function PokemonBankApp() {
             onClick={() => {
               playSound("beep");
               setEditNombre(cuenta.nombre);
-              setEditNumero(cuenta.numeroCuenta);
               setEditTipo(cuenta.tipoCuenta);
               setEditSaldo(cuenta.saldo.toString());
-              setEditPin(cuenta.pinCajero || "1234");
+              setEditPin("");
               setShowDbModal(true);
             }}
             className="flex items-center gap-1.5 bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-300 hover:text-white px-2.5 py-1 rounded text-[10px] sm:text-xs font-orbitron font-semibold transition-all cursor-pointer shadow-xs"
@@ -846,6 +796,9 @@ export default function PokemonBankApp() {
                     </span>
                   </div>
                   <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-[140px]">
+                    {transactions.length === 0 && (
+                      <p className="text-[11px] text-slate-400 text-center py-3">Sin movimientos registrados</p>
+                    )}
                     {transactions.slice(0, 5).map((tx) => (
                       <div
                         key={tx.id}
@@ -862,7 +815,7 @@ export default function PokemonBankApp() {
                             tx.tipo === "DEPOSITO" ? "text-emerald-600" : "text-rose-600"
                           }`}
                         >
-                          {tx.tipo === "DEPOSITO" ? "+" : "-"}${tx.monto.toLocaleString()}
+                          {tx.tipo === "DEPOSITO" ? "+" : "-"}${tx.monto.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                     ))}
@@ -1005,7 +958,7 @@ export default function PokemonBankApp() {
                   </div>
 
                   <p className="text-[10px] text-slate-400 font-mono mb-2">
-                    PIN por defecto: <strong className="text-amber-700">1234</strong>
+                    El PIN se valida con la base de datos
                   </p>
 
                   <div className="flex gap-2 justify-center">
@@ -1057,42 +1010,54 @@ export default function PokemonBankApp() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 my-auto py-1">
-                {servicios.map((serv) => (
-                  <div
-                    key={serv.id}
-                    className={`p-2.5 rounded-xl border transition-all cursor-pointer bg-white flex items-center justify-between ${
-                      selectedServiceId === serv.id
-                        ? "border-indigo-600 ring-2 ring-indigo-200"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
-                    onClick={() => {
-                      playSound("beep");
-                      setSelectedServiceId(serv.id);
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{serv.icono}</span>
-                      <div>
-                        <p className="font-semibold text-xs text-slate-800 leading-tight">{serv.nombre}</p>
-                        <p className="text-[10px] text-slate-400">{serv.categoria}</p>
-                        <p className="text-[11px] font-orbitron font-bold text-indigo-700 mt-0.5">
-                          ${serv.tarifaBase}.00
-                        </p>
+              <div className="my-auto py-1">
+                {servicios.length === 0 ? (
+                  <p className="text-center text-xs text-slate-500 font-orbitron">Cargando servicios...</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {servicios.map((serv) => (
+                      <div
+                        key={serv.id}
+                        className={`p-2.5 rounded-xl border transition-all cursor-pointer bg-white flex items-center gap-2 ${
+                          selectedServiceId === serv.id
+                            ? "border-indigo-600 ring-2 ring-indigo-200"
+                            : "border-slate-200 hover:border-slate-300"
+                        }`}
+                        onClick={() => {
+                          playSound("beep");
+                          setSelectedServiceId(serv.id);
+                        }}
+                      >
+                        <span className="text-xl">{serv.icono}</span>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-xs text-slate-800 leading-tight">{serv.nombre}</p>
+                          <p className="text-[10px] text-slate-500">{serv.institucion}</p>
+                          <p className="text-[10px] font-mono text-indigo-700 mt-0.5 truncate">NPE {serv.npe}</p>
+                        </div>
                       </div>
-                    </div>
-                    <button
-                      disabled={loadingAction}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePayService(serv.id);
-                      }}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-orbitron font-bold text-[10px] tracking-wider transition-colors cursor-pointer shadow-xs active:scale-95"
-                    >
-                      Pagar
-                    </button>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                <div className="flex items-center justify-center gap-2 max-w-sm mx-auto mt-3">
+                  <input
+                    type="number"
+                    placeholder="Monto a pagar"
+                    value={montoServicio}
+                    onChange={(e) => setMontoServicio(e.target.value)}
+                    disabled={loadingAction}
+                    className="w-44 px-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg font-orbitron focus:outline-none focus:border-indigo-600 bg-white"
+                  />
+                  <button
+                    disabled={loadingAction || !selectedServiceId}
+                    onClick={() => {
+                      if (selectedServiceId) handlePayService(selectedServiceId, parseFloat(montoServicio));
+                    }}
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-orbitron font-bold text-xs transition-colors cursor-pointer shadow-xs active:scale-95"
+                  >
+                    {loadingAction ? "..." : "Pagar"}
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-between items-center pt-2 border-t border-slate-200">
@@ -1165,7 +1130,7 @@ export default function PokemonBankApp() {
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-600">Operación:</span>
-                <span className="font-bold text-black">{activeReceipt.tipo}</span>
+                <span className="font-bold text-black">{ETIQUETA_TIPO[activeReceipt.tipo]}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Descripción:</span>
@@ -1259,20 +1224,20 @@ export default function PokemonBankApp() {
             <div className="bg-emerald-950/40 border border-emerald-700/50 rounded-xl p-3 mb-4 text-xs">
               <div className="flex items-center gap-2 text-emerald-400 font-semibold mb-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Conexión MCP Supabase: vknqulxhybbjaqhdttie</span>
+                <span>Supabase: {dbStatus}</span>
               </div>
               <p className="text-[11px] text-slate-300">
-                Usuario en BD: <code className="text-emerald-300">User.ID_User: 60</code> (Jona • jonatanorellana94@gmail.com).
+                Cuenta del cajero: <code className="text-emerald-300">cuentas.id_cuenta = {cuenta.numeroCuenta}</code>
               </p>
               <p className="text-[10px] text-slate-400 mt-1">
-                Script SQL con todas las tablas guardado en: <code className="text-amber-300">pokemon-bank/supabase_pokemon_bank.sql</code>
+                Script SQL con todas las tablas guardado en: <code className="text-amber-300">supabase_pokemon_bank.sql</code>
               </p>
             </div>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-[11px] font-orbitron font-semibold text-slate-300 mb-1">
-                  Nombre del Titular (nombre):
+                  Nombre del Titular (nombre_titular):
                 </label>
                 <input
                   type="text"
@@ -1285,7 +1250,7 @@ export default function PokemonBankApp() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-orbitron font-semibold text-slate-300 mb-1">
-                    Tipo de Cuenta (tipoCuenta):
+                    Tipo de Cuenta (tipo_cuenta):
                   </label>
                   <input
                     type="text"
@@ -1296,11 +1261,13 @@ export default function PokemonBankApp() {
                 </div>
                 <div>
                   <label className="block text-[11px] font-orbitron font-semibold text-slate-300 mb-1">
-                    PIN del Cajero (pinCajero):
+                    Nuevo PIN (pin):
                   </label>
                   <input
-                    type="text"
+                    type="password"
+                    inputMode="numeric"
                     maxLength={4}
+                    placeholder="Vacío = no cambiar"
                     value={editPin}
                     onChange={(e) => setEditPin(e.target.value)}
                     className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs font-mono text-amber-300 focus:outline-none focus:border-indigo-500"
@@ -1310,19 +1277,19 @@ export default function PokemonBankApp() {
 
               <div>
                 <label className="block text-[11px] font-orbitron font-semibold text-slate-300 mb-1">
-                  Número de Cuenta (numeroCuenta):
+                  Número de Cuenta (id_cuenta):
                 </label>
                 <input
                   type="text"
-                  value={editNumero}
-                  onChange={(e) => setEditNumero(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                  value={cuenta.numeroCuenta}
+                  readOnly
+                  className="w-full px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-xs font-mono text-slate-400 cursor-not-allowed"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-orbitron font-semibold text-slate-300 mb-1">
-                  Saldo en Cuenta (saldo):
+                  Saldo en Cuenta (saldo_disponible):
                 </label>
                 <input
                   type="number"
@@ -1336,10 +1303,10 @@ export default function PokemonBankApp() {
             <div className="mt-4 pt-3 border-t border-slate-800">
               <p className="text-[11px] font-semibold text-slate-300 mb-1.5">Tablas del ATM incluidas:</p>
               <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
-                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ pokemon_bank_cuentas</span>
-                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ pokemon_bank_transacciones</span>
-                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ pokemon_bank_servicios</span>
-                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ pokemon_bank_pagos</span>
+                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ cuentas</span>
+                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ transacciones</span>
+                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ servicios</span>
+                <span className="bg-slate-800/80 px-2 py-1 rounded text-sky-300">✓ auditoria_accesos</span>
               </div>
             </div>
 

@@ -23,6 +23,96 @@ const CUENTA_VACIA: CuentaPokemon = {
   limiteRetiroDiario: 0,
 };
 
+const COLOR_PIN = {
+  amber: { titulo: "text-amber-700", digito: "border-amber-600 bg-amber-50 text-amber-800", boton: "bg-amber-600 hover:bg-amber-700" },
+  emerald: { titulo: "text-emerald-700", digito: "border-emerald-600 bg-emerald-50 text-emerald-800", boton: "bg-emerald-600 hover:bg-emerald-700" },
+};
+
+// Teclado de PIN para depósitos y retiros
+function TecladoPin(props: {
+  pin: string;
+  setPin: (pin: string) => void;
+  etiquetaMonto: string;
+  monto: number;
+  textoBoton: string;
+  textoCargando: string;
+  cargando: boolean;
+  color: keyof typeof COLOR_PIN;
+  onTecla: () => void;
+  onAtras: () => void;
+  onConfirmar: () => void;
+}) {
+  const { pin, setPin, cargando } = props;
+  const color = COLOR_PIN[props.color];
+
+  return (
+    <div className="my-auto max-w-xs mx-auto text-center bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+      <div className={`flex items-center justify-center gap-1.5 font-orbitron font-bold text-xs mb-1 ${color.titulo}`}>
+        <span>🔒</span>
+        <span>INGRESE PIN DE SEGURIDAD</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-2">
+        {props.etiquetaMonto}:{" "}
+        <strong className="text-black font-orbitron">
+          ${props.monto.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+        </strong>
+      </p>
+
+      <div className="flex justify-center gap-2.5 mb-3">
+        {[0, 1, 2, 3].map((idx) => (
+          <div
+            key={idx}
+            className={`w-7 h-8 border-2 rounded-md flex items-center justify-center text-lg font-bold font-mono transition-all ${
+              pin.length > idx ? color.digito : "border-slate-300 bg-slate-50 text-slate-300"
+            }`}
+          >
+            {pin.length > idx ? "•" : ""}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5 max-w-[200px] mx-auto mb-2">
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, "C", 0, "⌫"].map((keyVal) => (
+          <button
+            key={String(keyVal)}
+            onClick={() => {
+              props.onTecla();
+              if (keyVal === "C") {
+                setPin("");
+              } else if (keyVal === "⌫") {
+                setPin(pin.slice(0, -1));
+              } else if (pin.length < 4) {
+                setPin(pin + String(keyVal));
+              }
+            }}
+            className="py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-xs font-orbitron font-bold text-slate-800 transition-colors cursor-pointer border border-slate-200"
+          >
+            {keyVal}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-[10px] text-slate-400 font-mono mb-2">El PIN se valida con la base de datos</p>
+
+      <div className="flex gap-2 justify-center">
+        <button
+          onClick={props.onAtras}
+          className="px-3 py-1 text-[11px] font-orbitron text-slate-600 hover:text-black cursor-pointer"
+        >
+          Atrás
+        </button>
+        <button
+          disabled={cargando || pin.length !== 4}
+          onClick={props.onConfirmar}
+          className={`px-4 py-1.5 disabled:opacity-50 text-white font-orbitron font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs ${color.boton}`}
+        >
+          {cargando ? props.textoCargando : props.textoBoton}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PokemonBankApp() {
   const [activeScreen, setActiveScreen] = useState<ServiceType>("main");
   const [customAmount, setCustomAmount] = useState<string>("");
@@ -34,6 +124,11 @@ export default function PokemonBankApp() {
 
   // Comprobante
   const [activeReceipt, setActiveReceipt] = useState<TransaccionATM | null>(null);
+
+  // Depósito con PIN
+  const [depositStep, setDepositStep] = useState<"monto" | "otra" | "pin">("monto");
+  const [depositAmount, setDepositAmount] = useState<number | null>(null);
+  const [depositPin, setDepositPin] = useState<string>("");
 
   // Retiro con PIN
   const [withdrawPin, setWithdrawPin] = useState<string>("");
@@ -163,10 +258,31 @@ export default function PokemonBankApp() {
   };
 
   // Depósito
-  const handleDeposit = async (amount: number) => {
-    if (amount <= 0) {
+  const reiniciarDeposito = () => {
+    setDepositStep("monto");
+    setDepositAmount(null);
+    setDepositPin("");
+    setCustomAmount("");
+  };
+
+  const pedirPinDeposito = (amount: number | null) => {
+    if (!amount || !(amount > 0)) {
       playSound("error");
-      showToast("Ingrese un monto válido a depositar.", "error");
+      showToast("Seleccione o digite la cantidad a depositar.", "error");
+      return;
+    }
+    setDepositAmount(amount);
+    setDepositPin("");
+    setDepositStep("pin");
+    playSound("beep");
+  };
+
+  const handleDeposit = async () => {
+    const amount = depositAmount;
+    if (!amount) return;
+    if (depositPin.length !== 4) {
+      playSound("error");
+      showToast("Por favor ingrese el PIN de 4 dígitos", "error");
       return;
     }
 
@@ -175,7 +291,7 @@ export default function PokemonBankApp() {
       const res = await fetch("/api/atm/depositar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ monto: amount }),
+        body: JSON.stringify({ monto: amount, pin: depositPin }),
       });
 
       const data = await res.json();
@@ -188,9 +304,10 @@ export default function PokemonBankApp() {
       recargarTransacciones();
       setActiveReceipt(data.transaccion);
       showToast(`¡Depósito exitoso de $${amount.toLocaleString("es-MX", { minimumFractionDigits: 2 })}!`, "success", 3000);
-      setCustomAmount("");
+      reiniciarDeposito();
     } catch (err: unknown) {
       playSound("error");
+      setDepositPin("");
       const msg = err instanceof Error ? err.message : "Error al depositar";
       showToast(msg, "error");
     } finally {
@@ -572,6 +689,7 @@ export default function PokemonBankApp() {
                 <button
                   onClick={() => {
                     playSound("beep");
+                    reiniciarDeposito();
                     setActiveScreen("depositar");
                   }}
                   className="group flex items-center gap-[6%] px-[6%] py-[4.2%] rounded-xl sm:rounded-2xl border-2 border-[#548092] bg-white hover:border-[#2f677d] hover:bg-slate-50/90 active:scale-[0.98] transition-all cursor-pointer shadow-xs hover:shadow-md"
@@ -656,77 +774,111 @@ export default function PokemonBankApp() {
 
           {/* Pantalla de depósito */}
           {activeScreen === "depositar" && (
-            <div className="w-full h-full flex flex-col justify-between p-[4%] bg-slate-50 text-slate-900">
-              <div className="flex items-center justify-between border-b pb-2 border-slate-300">
-                <div className="flex items-center gap-2">
-                  <span className="text-emerald-600 font-bold font-orbitron text-sm sm:text-base">
-                    [+] RANURA DE DEPÓSITO DE EFECTIVO
-                  </span>
-                </div>
-                <button
-                  onClick={() => setActiveScreen("main")}
-                  className="text-xs font-orbitron font-bold text-slate-500 hover:text-red-600 transition-colors cursor-pointer"
-                >
-                  ✕ CANCELAR
-                </button>
-              </div>
+            <div className="w-full h-full flex flex-col p-[6%] bg-white text-black">
+              {depositStep === "monto" && (
+                <>
+                  <h2 className="font-orbitron font-black text-[clamp(12px,1.6vw,22px)] mt-[2%] mb-[4%]">
+                    ¿Que cantidad quiere depositar?
+                  </h2>
 
-              <div className="text-center my-auto">
-                <p className="text-xs text-slate-500 font-medium">Saldo actual disponible en cuenta</p>
-                <p className="font-orbitron font-black text-xl sm:text-2xl text-emerald-700">
-                  ${cuenta.saldo.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-                </p>
-
-                <p className="font-orbitron font-bold text-xs sm:text-sm text-slate-700 mt-3 mb-2">
-                  Seleccione billetes a ingresar en la tolva:
-                </p>
-
-                <div className="grid grid-cols-4 gap-2 max-w-lg mx-auto mb-3">
-                  {[200, 500, 1000, 5000].map((amt) => (
+                  <div className="grid grid-flow-col grid-rows-4 grid-cols-2 gap-x-[12%] gap-y-[4%] flex-1 max-h-[55%]">
+                    {[5, 10, 20, 40, 60, 100, 200].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => {
+                          playSound("beep");
+                          setDepositAmount(amt);
+                        }}
+                        className={`px-[4%] rounded-lg border border-[#548092] text-left font-orbitron font-black text-[clamp(10px,1.15vw,16px)] transition-colors cursor-pointer ${
+                          depositAmount === amt ? "bg-[#9ec5f8]" : "bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        ${amt.toFixed(2)}
+                      </button>
+                    ))}
                     <button
-                      key={amt}
-                      disabled={loadingAction}
-                      onClick={() => handleDeposit(amt)}
-                      className="py-2.5 bg-white border border-[#548092] hover:bg-emerald-50 hover:border-emerald-600 rounded-lg font-orbitron font-bold text-xs sm:text-sm text-slate-800 transition-all cursor-pointer shadow-xs active:scale-95 disabled:opacity-50"
+                      onClick={() => {
+                        playSound("beep");
+                        setDepositAmount(null);
+                        setCustomAmount("");
+                        setDepositStep("otra");
+                      }}
+                      className="px-[4%] rounded-lg border border-[#548092] bg-white hover:bg-slate-50 text-left font-orbitron font-black text-[clamp(10px,1.15vw,16px)] transition-colors cursor-pointer"
                     >
-                      +${amt.toLocaleString()}
+                      Otra cantidad
                     </button>
-                  ))}
-                </div>
+                  </div>
 
-                <div className="flex items-center justify-center gap-2 max-w-xs mx-auto">
-                  <input
-                    type="number"
-                    placeholder="Monto personalizado..."
-                    value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
-                    disabled={loadingAction}
-                    className="w-44 px-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg font-orbitron focus:outline-none focus:border-emerald-600 bg-white"
-                  />
-                  <button
-                    disabled={loadingAction}
-                    onClick={() => {
-                      const val = parseFloat(customAmount);
-                      if (val > 0) handleDeposit(val);
-                    }}
-                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-orbitron font-bold text-xs rounded-lg transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
-                  >
-                    {loadingAction ? "..." : "Ingresar"}
-                  </button>
-                </div>
-              </div>
+                  <div className="flex justify-center mt-auto">
+                    <button
+                      onClick={() => pedirPinDeposito(depositAmount)}
+                      className="flex items-center gap-2 px-[6%] py-[1.2%] rounded-lg bg-[#00d84a] hover:bg-[#00c043] border border-[#0a8a35] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      <img src="/ICONOS%20POKEMON%20BANK/DepositNegro.png" alt="" className="h-[1.4em] w-auto" />
+                      Depositar
+                    </button>
+                  </div>
+                </>
+              )}
 
-              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <button
-                  onClick={() => setActiveScreen("main")}
-                  className="font-orbitron text-xs text-slate-600 hover:text-black font-semibold cursor-pointer"
-                >
-                  ← Volver al Menú
-                </button>
-                <span className="text-[10px] font-mono text-slate-400">
-                  Cajero: ATM-POKEDEX-01 • Acepta billetes Pokémon
-                </span>
-              </div>
+              {depositStep === "otra" && (
+                <>
+                  <div className="my-auto">
+                    <h2 className="font-orbitron font-black text-[clamp(12px,1.6vw,22px)] mb-[2%]">
+                      Digite la cantidad a depositar
+                    </h2>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="$0.00"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") pedirPinDeposito(parseFloat(customAmount));
+                      }}
+                      autoFocus
+                      className="w-[40%] px-[2%] py-[1%] rounded-lg border border-[#548092] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] focus:outline-none focus:ring-2 focus:ring-[#9ec5f8]"
+                    />
+                  </div>
+
+                  <div className="flex justify-center gap-[4%] mb-[2%]">
+                    <button
+                      onClick={() => {
+                        playSound("beep");
+                        setCustomAmount("");
+                        setDepositStep("monto");
+                      }}
+                      className="px-[5%] py-[1.2%] rounded-lg bg-white hover:bg-slate-50 border border-[#548092] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      ← Regresar
+                    </button>
+                    <button
+                      onClick={() => pedirPinDeposito(parseFloat(customAmount))}
+                      className="flex items-center gap-2 px-[6%] py-[1.2%] rounded-lg bg-[#00d84a] hover:bg-[#00c043] border border-[#0a8a35] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      <img src="/ICONOS%20POKEMON%20BANK/DepositNegro.png" alt="" className="h-[1.4em] w-auto" />
+                      Depositar
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {depositStep === "pin" && (
+                <TecladoPin
+                  pin={depositPin}
+                  setPin={setDepositPin}
+                  etiquetaMonto="Monto a depositar"
+                  monto={depositAmount ?? 0}
+                  textoBoton="Confirmar Depósito"
+                  textoCargando="Depositando..."
+                  cargando={loadingAction}
+                  color="emerald"
+                  onTecla={() => playSound("beep")}
+                  onAtras={() => setDepositStep("monto")}
+                  onConfirmar={handleDeposit}
+                />
+              )}
             </div>
           )}
 
@@ -890,73 +1042,19 @@ export default function PokemonBankApp() {
                 </div>
               ) : (
                 // Paso 2: PIN
-                <div className="my-auto max-w-xs mx-auto text-center bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                  <div className="flex items-center justify-center gap-1.5 text-amber-700 font-orbitron font-bold text-xs mb-1">
-                    <span>🔒</span>
-                    <span>INGRESE PIN DE SEGURIDAD</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Monto a retirar: <strong className="text-black font-orbitron">${withdrawAmount?.toLocaleString()}</strong>
-                  </p>
-
-                  {/* Dígitos del PIN */}
-                  <div className="flex justify-center gap-2.5 mb-3">
-                    {[0, 1, 2, 3].map((idx) => (
-                      <div
-                        key={idx}
-                        className={`w-7 h-8 border-2 rounded-md flex items-center justify-center text-lg font-bold font-mono transition-all ${
-                          withdrawPin.length > idx
-                            ? "border-amber-600 bg-amber-50 text-amber-800"
-                            : "border-slate-300 bg-slate-50 text-slate-300"
-                        }`}
-                      >
-                        {withdrawPin.length > idx ? "•" : ""}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Teclado */}
-                  <div className="grid grid-cols-3 gap-1.5 max-w-[200px] mx-auto mb-2">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, "C", 0, "⌫"].map((keyVal) => (
-                      <button
-                        key={String(keyVal)}
-                        onClick={() => {
-                          playSound("beep");
-                          if (keyVal === "C") {
-                            setWithdrawPin("");
-                          } else if (keyVal === "⌫") {
-                            setWithdrawPin((prev) => prev.slice(0, -1));
-                          } else if (withdrawPin.length < 4) {
-                            setWithdrawPin((prev) => prev + String(keyVal));
-                          }
-                        }}
-                        className="py-1.5 bg-slate-100 hover:bg-slate-200 active:bg-amber-100 rounded text-xs font-orbitron font-bold text-slate-800 transition-colors cursor-pointer border border-slate-200"
-                      >
-                        {keyVal}
-                      </button>
-                    ))}
-                  </div>
-
-                  <p className="text-[10px] text-slate-400 font-mono mb-2">
-                    El PIN se valida con la base de datos
-                  </p>
-
-                  <div className="flex gap-2 justify-center">
-                    <button
-                      onClick={() => setShowPinPad(false)}
-                      className="px-3 py-1 text-[11px] font-orbitron text-slate-600 hover:text-black cursor-pointer"
-                    >
-                      Atrás
-                    </button>
-                    <button
-                      disabled={loadingAction || withdrawPin.length !== 4}
-                      onClick={confirmarRetiroConPin}
-                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-orbitron font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
-                    >
-                      {loadingAction ? "Dispensando..." : "Confirmar Retiro"}
-                    </button>
-                  </div>
-                </div>
+                <TecladoPin
+                  pin={withdrawPin}
+                  setPin={setWithdrawPin}
+                  etiquetaMonto="Monto a retirar"
+                  monto={withdrawAmount ?? 0}
+                  textoBoton="Confirmar Retiro"
+                  textoCargando="Dispensando..."
+                  cargando={loadingAction}
+                  color="amber"
+                  onTecla={() => playSound("beep")}
+                  onAtras={() => setShowPinPad(false)}
+                  onConfirmar={confirmarRetiroConPin}
+                />
               )}
 
               <div className="flex justify-between items-center pt-2 border-t border-slate-200">

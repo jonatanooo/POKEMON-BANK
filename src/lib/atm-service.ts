@@ -70,14 +70,17 @@ function tipoDesdeBD(tipo: string): TipoTransaccion {
 // La db guarda la hora en UTC
 function formatearFecha(fechaHora: string): string {
   const fecha = new Date(fechaHora.endsWith("Z") ? fechaHora : `${fechaHora}Z`);
-  return fecha.toLocaleString("es-SV", {
+  const partes = new Intl.DateTimeFormat("es-SV", {
     timeZone: "America/El_Salvador",
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
-  });
+    hourCycle: "h23",
+  }).formatToParts(fecha);
+  const p = (tipo: string) => partes.find((x) => x.type === tipo)?.value ?? "";
+  return `${p("day")}/${p("month")}/${p("year")} | ${p("hour")}:${p("minute")}`;
 }
 
 function iconoServicio(nombre: string): string {

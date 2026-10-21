@@ -134,6 +134,7 @@ export default function PokemonBankApp() {
   const [withdrawPin, setWithdrawPin] = useState<string>("");
   const [withdrawAmount, setWithdrawAmount] = useState<number | null>(null);
   const [showPinPad, setShowPinPad] = useState<boolean>(false);
+  const [retiroOtra, setRetiroOtra] = useState<boolean>(false);
 
   // Cuenta y estado de la db
   const [cuenta, setCuenta] = useState<CuentaPokemon>(CUENTA_VACIA);
@@ -316,10 +317,18 @@ export default function PokemonBankApp() {
   };
 
   // Retiro
-  const iniciarRetiro = (amount: number) => {
-    if (amount <= 0) {
+  const reiniciarRetiro = () => {
+    setShowPinPad(false);
+    setRetiroOtra(false);
+    setWithdrawAmount(null);
+    setWithdrawPin("");
+    setCustomAmount("");
+  };
+
+  const iniciarRetiro = (amount: number | null) => {
+    if (!amount || !(amount > 0)) {
       playSound("error");
-      showToast("Ingrese un monto válido a retirar.", "error");
+      showToast("Seleccione o digite la cantidad a retirar.", "error");
       return;
     }
     if (amount > cuenta.saldo) {
@@ -363,14 +372,12 @@ export default function PokemonBankApp() {
       playSound("dispense");
       setCuenta(data.cuenta);
       recargarTransacciones();
-      setShowPinPad(false);
       setActiveReceipt(data.transaccion);
       showToast(`¡Retiro de $${withdrawAmount.toLocaleString("es-MX", { minimumFractionDigits: 2 })} exitoso! Tome su efectivo.`, "success", 3500);
-      setCustomAmount("");
-      setWithdrawAmount(null);
-      setWithdrawPin("");
+      reiniciarRetiro();
     } catch (err: unknown) {
       playSound("error");
+      setWithdrawPin("");
       const msg = err instanceof Error ? err.message : "Error al procesar el retiro";
       showToast(msg, "error");
     } finally {
@@ -731,9 +738,8 @@ export default function PokemonBankApp() {
                 <button
                   onClick={() => {
                     playSound("beep");
+                    reiniciarRetiro();
                     setActiveScreen("retirar");
-                    setShowPinPad(false);
-                    setWithdrawAmount(null);
                   }}
                   className="group flex items-center gap-[6%] px-[6%] py-[4.2%] rounded-xl sm:rounded-2xl border-2 border-[#548092] bg-white hover:border-[#2f677d] hover:bg-slate-50/90 active:scale-[0.98] transition-all cursor-pointer shadow-xs hover:shadow-md"
                 >
@@ -981,67 +987,97 @@ export default function PokemonBankApp() {
 
           {/* Pantalla de retiro */}
           {activeScreen === "retirar" && (
-            <div className="w-full h-full flex flex-col justify-between p-[4%] bg-slate-50 text-slate-900">
-              <div className="flex items-center justify-between border-b pb-2 border-slate-300">
-                <span className="text-amber-600 font-bold font-orbitron text-sm sm:text-base">
-                  [-] DISPENSADOR AUTOMÁTICO DE EFECTIVO
-                </span>
-                <button
-                  onClick={() => {
-                    setActiveScreen("main");
-                    setShowPinPad(false);
-                  }}
-                  className="text-xs font-orbitron font-bold text-slate-500 hover:text-red-600 transition-colors cursor-pointer"
-                >
-                  ✕ CANCELAR
-                </button>
-              </div>
+            <div className="w-full h-full flex flex-col p-[6%] bg-white text-black">
+              {!showPinPad && !retiroOtra && (
+                <>
+                  <h2 className="font-orbitron font-black text-[clamp(12px,1.6vw,22px)] mt-[2%] mb-[4%]">
+                    ¿Que cantidad quiere retirar?
+                  </h2>
 
-              {!showPinPad ? (
-                // Paso 1: monto
-                <div className="text-center my-auto">
-                  <p className="text-xs text-slate-500">Saldo disponible</p>
-                  <p className="font-orbitron font-bold text-lg text-slate-800">
-                    ${cuenta.saldo.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-                  </p>
-
-                  <p className="font-orbitron font-bold text-xs sm:text-sm text-slate-700 mt-2 mb-2">
-                    Seleccione el monto que desea retirar:
-                  </p>
-
-                  <div className="grid grid-cols-4 gap-2 max-w-lg mx-auto mb-3">
-                    {[100, 200, 500, 1000].map((amt) => (
+                  <div className="grid grid-flow-col grid-rows-4 grid-cols-2 gap-x-[12%] gap-y-[4%] flex-1 max-h-[55%]">
+                    {[5, 10, 20, 40, 60, 100, 200].map((amt) => (
                       <button
                         key={amt}
-                        onClick={() => iniciarRetiro(amt)}
-                        className="py-2.5 bg-white border border-[#548092] hover:bg-amber-50 hover:border-amber-600 rounded-lg font-orbitron font-bold text-xs sm:text-sm text-slate-800 transition-all cursor-pointer shadow-xs active:scale-95"
+                        onClick={() => {
+                          playSound("beep");
+                          setWithdrawAmount(amt);
+                        }}
+                        className={`px-[4%] rounded-lg border border-[#548092] text-left font-orbitron font-black text-[clamp(10px,1.15vw,16px)] transition-colors cursor-pointer ${
+                          withdrawAmount === amt ? "bg-[#9ec5f8]" : "bg-white hover:bg-slate-50"
+                        }`}
                       >
-                        ${amt}
+                        ${amt.toFixed(2)}
                       </button>
                     ))}
-                  </div>
-
-                  <div className="flex items-center justify-center gap-2 max-w-xs mx-auto">
-                    <input
-                      type="number"
-                      placeholder="Monto personalizado"
-                      value={customAmount}
-                      onChange={(e) => setCustomAmount(e.target.value)}
-                      className="w-44 px-3 py-1.5 text-xs sm:text-sm border border-slate-300 rounded-lg font-orbitron focus:outline-none focus:border-amber-600 bg-white"
-                    />
                     <button
                       onClick={() => {
-                        const val = parseFloat(customAmount);
-                        if (val > 0) iniciarRetiro(val);
+                        playSound("beep");
+                        setWithdrawAmount(null);
+                        setCustomAmount("");
+                        setRetiroOtra(true);
                       }}
-                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-orbitron font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
+                      className="px-[4%] rounded-lg border border-[#548092] bg-white hover:bg-slate-50 text-left font-orbitron font-black text-[clamp(10px,1.15vw,16px)] transition-colors cursor-pointer"
                     >
-                      Continuar
+                      Otra cantidad
                     </button>
                   </div>
-                </div>
-              ) : (
-                // Paso 2: PIN
+
+                  <div className="flex justify-center mt-auto">
+                    <button
+                      onClick={() => iniciarRetiro(withdrawAmount)}
+                      className="flex items-center gap-2 px-[6%] py-[1.2%] rounded-lg bg-[#00d84a] hover:bg-[#00c043] border border-[#0a8a35] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      <img src="/ICONOS%20POKEMON%20BANK/RetirarDineroNegro.png" alt="" className="h-[1.4em] w-auto" />
+                      Retirar
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {!showPinPad && retiroOtra && (
+                <>
+                  <div className="my-auto">
+                    <h2 className="font-orbitron font-black text-[clamp(12px,1.6vw,22px)] mb-[2%]">
+                      Digite la cantidad a retirar
+                    </h2>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="$0.00"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") iniciarRetiro(parseFloat(customAmount));
+                      }}
+                      autoFocus
+                      className="w-[40%] px-[2%] py-[1%] rounded-lg border border-[#548092] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] focus:outline-none focus:ring-2 focus:ring-[#9ec5f8]"
+                    />
+                  </div>
+
+                  <div className="flex justify-center gap-[4%] mb-[2%]">
+                    <button
+                      onClick={() => {
+                        playSound("beep");
+                        setCustomAmount("");
+                        setRetiroOtra(false);
+                      }}
+                      className="px-[5%] py-[1.2%] rounded-lg bg-white hover:bg-slate-50 border border-[#548092] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      ← Regresar
+                    </button>
+                    <button
+                      onClick={() => iniciarRetiro(parseFloat(customAmount))}
+                      className="flex items-center gap-2 px-[6%] py-[1.2%] rounded-lg bg-[#00d84a] hover:bg-[#00c043] border border-[#0a8a35] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      <img src="/ICONOS%20POKEMON%20BANK/RetirarDineroNegro.png" alt="" className="h-[1.4em] w-auto" />
+                      Retirar
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {showPinPad && (
                 <TecladoPin
                   pin={withdrawPin}
                   setPin={setWithdrawPin}
@@ -1052,25 +1088,13 @@ export default function PokemonBankApp() {
                   cargando={loadingAction}
                   color="amber"
                   onTecla={() => playSound("beep")}
-                  onAtras={() => setShowPinPad(false)}
+                  onAtras={() => {
+                    setShowPinPad(false);
+                    setRetiroOtra(false);
+                  }}
                   onConfirmar={confirmarRetiroConPin}
                 />
               )}
-
-              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <button
-                  onClick={() => {
-                    setActiveScreen("main");
-                    setShowPinPad(false);
-                  }}
-                  className="font-orbitron text-xs text-slate-600 hover:text-black font-semibold cursor-pointer"
-                >
-                  ← Volver al Menú
-                </button>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  Límite diario: ${cuenta.limiteRetiroDiario?.toLocaleString() || "25,000"}
-                </span>
-              </div>
             </div>
           )}
 

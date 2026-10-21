@@ -870,7 +870,17 @@ export default function PokemonBankApp() {
                     </button>
                   </div>
 
-                  <div className="flex justify-center mt-auto">
+                  <div className="flex justify-center gap-[4%] mt-auto">
+                    <button
+                      onClick={() => {
+                        playSound("beep");
+                        reiniciarDeposito();
+                        setActiveScreen("main");
+                      }}
+                      className="px-[5%] py-[1.2%] rounded-lg bg-white hover:bg-slate-50 border border-[#548092] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"
+                    >
+                      ← Menú principal
+                    </button>
                     <button
                       onClick={() => pedirPinDeposito(depositAmount)}
                       className="flex items-center gap-2 px-[6%] py-[1.2%] rounded-lg bg-[#00d84a] hover:bg-[#00c043] border border-[#0a8a35] font-orbitron font-black text-[clamp(10px,1.15vw,16px)] cursor-pointer transition-colors active:scale-95"

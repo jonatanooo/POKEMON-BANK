@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { CuentaPokemon, TransaccionATM, ServicioATM } from "@/lib/atm-service";
 
-type ServiceType = "main" | "depositar" | "consultar" | "retirar" | "pagar";
+type ServiceType = "main" | "depositar" | "consultar" | "retirar" | "pagar" | "historial";
 
 const ETIQUETA_TIPO: Record<TransaccionATM["tipo"], string> = {
   DEPOSITO: "DEPÓSITO",
@@ -110,6 +110,61 @@ function TecladoPin(props: {
         </button>
       </div>
     </div>
+  );
+}
+
+// Gráfica del saldo después de cada transacción
+function GraficaTransacciones({ transacciones }: { transacciones: TransaccionATM[] }) {
+  // De la más vieja a la más nueva
+  const datos = transacciones.slice(0, 5).reverse();
+  if (datos.length === 0) {
+    return <p className="m-auto text-xs text-slate-400 font-orbitron">Sin transacciones</p>;
+  }
+
+  const ancho = 400;
+  const alto = 320;
+  const ejeY = 270;
+  const valores = [datos[0].saldoAnterior, ...datos.map((tx) => tx.saldoPosterior)];
+  const min = Math.min(...valores);
+  const max = Math.max(...valores);
+  const y = (v: number) => (max === min ? ejeY / 2 : ejeY - 35 - ((v - min) / (max - min)) * (ejeY - 75));
+  const x = (i: number) => 50 + i * ((ancho - 90) / Math.max(datos.length - 1, 1));
+
+  const puntos = datos.map((tx, i) => ({
+    x: x(i),
+    y: y(tx.saldoPosterior),
+    monto: tx.saldoPosterior - tx.saldoAnterior,
+    id: tx.id,
+  }));
+  const linea = [`0,${y(datos[0].saldoAnterior)}`, ...puntos.map((p) => `${p.x},${p.y}`)].join(" ");
+
+  return (
+    <svg viewBox={`0 0 ${ancho} ${alto}`} className="w-full h-full" role="img" aria-label="Gráfica de transacciones">
+      <polyline points={linea} fill="none" stroke="black" strokeWidth="2" />
+      <line x1="0" y1={ejeY} x2={ancho} y2={ejeY} stroke="black" strokeWidth="3" />
+      {puntos.map((p) => {
+        const color = p.monto >= 0 ? "#00e33a" : "#ff1a1a";
+        return (
+          <g key={p.id}>
+            <line x1={p.x} y1={ejeY - 7} x2={p.x} y2={ejeY + 7} stroke="black" strokeWidth="2" />
+            <circle cx={p.x} cy={p.y} r="11" fill={color} />
+            <text
+              x={p.x}
+              y={ejeY + 28}
+              textAnchor="middle"
+              fontSize="11"
+              fontWeight="700"
+              fill={color}
+              stroke="black"
+              strokeWidth="0.6"
+              className="font-orbitron"
+            >
+              $ {p.monto.toFixed(2)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
@@ -974,12 +1029,78 @@ export default function PokemonBankApp() {
                   <button
                     onClick={() => {
                       playSound("beep");
+                      recargarTransacciones();
+                      setActiveScreen("historial");
+                    }}
+                    className="bg-[#d33f3f] hover:bg-[#b83232] text-white px-3 py-1 rounded font-orbitron font-bold text-[10px] tracking-wider transition-colors cursor-pointer"
+                  >
+                    📊 ESTADÍSTICAS
+                  </button>
+                  <button
+                    onClick={() => {
+                      playSound("beep");
                       setActiveReceipt(transactions[0] || null);
                     }}
                     className="bg-[#548092] hover:bg-[#38677a] text-white px-3 py-1 rounded font-orbitron font-bold text-[10px] tracking-wider transition-colors cursor-pointer"
                   >
                     🖨 IMPRIMIR SALDO
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pantalla de estadísticas */}
+          {activeScreen === "historial" && (
+            <div className="w-full h-full flex flex-col bg-white text-black">
+              <div className="relative bg-[#d33f3f] border-b-[3px] border-black py-[1.8%] text-center flex-shrink-0">
+                <button
+                  onClick={() => {
+                    playSound("beep");
+                    setActiveScreen("consultar");
+                  }}
+                  className="absolute left-[2%] top-1/2 -translate-y-1/2 font-orbitron text-[clamp(9px,0.9vw,13px)] text-white/90 hover:text-white cursor-pointer"
+                >
+                  ← Volver
+                </button>
+                <h2 className="font-orbitron font-bold text-white tracking-wide text-[clamp(12px,1.6vw,22px)]">
+                  Estadisticas de Transacciones
+                </h2>
+                <span className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 w-[clamp(22px,3.2vw,44px)] aspect-square rounded-full bg-[#d9d9d9] border-[3px] border-black" />
+              </div>
+
+              <div className="grid grid-cols-[3fr_2fr] gap-[4%] px-[4%] pt-[5%] pb-[3%] flex-1 min-h-0">
+                <div className="border-2 border-black rounded-xl p-[2%] flex min-h-0">
+                  <GraficaTransacciones transacciones={transactions} />
+                </div>
+
+                <div className="overflow-y-auto pr-2 min-h-0 [scrollbar-width:thin] [scrollbar-color:#000_transparent]">
+                  {transactions.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-4">Sin transacciones</p>
+                  )}
+                  {transactions.map((tx) => {
+                    const monto = tx.saldoPosterior - tx.saldoAnterior;
+                    return (
+                      <div
+                        key={tx.id}
+                        onClick={() => setActiveReceipt(tx)}
+                        title="Click para ver comprobante"
+                        className="flex items-center justify-between gap-2 border-b-2 border-black py-[3%] cursor-pointer hover:bg-slate-50"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium text-[clamp(10px,1.05vw,15px)] leading-tight truncate">{tx.descripcion}</p>
+                          <p className="text-[clamp(9px,0.95vw,13px)] text-slate-700">{tx.fecha}</p>
+                        </div>
+                        <span
+                          className={`font-orbitron font-bold whitespace-nowrap text-[clamp(10px,1.05vw,15px)] [-webkit-text-stroke:0.4px_#000] ${
+                            monto >= 0 ? "text-[#00e33a]" : "text-[#ff1a1a]"
+                          }`}
+                        >
+                          $ {monto.toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
